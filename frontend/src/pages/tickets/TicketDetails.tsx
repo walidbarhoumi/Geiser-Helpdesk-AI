@@ -1,309 +1,484 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowLeft, Upload, X, Loader2, Zap, Brain,
-  Target, Clock, AlertTriangle, Sparkles, CheckCircle2,
-  Cpu, TrendingUp, Shield
+  ArrowLeft, Clock, AlertTriangle, Shield, User,
+  Bot, Sparkles, Loader2, CheckCircle2, XCircle,
+  Activity, Zap, Paperclip, MessageSquare, Send,
+  Cpu, Target, Award, Brain, Info, Check, Copy, RefreshCw
 } from 'lucide-react';
-import { TicketPriority, TicketChannel } from '../../types';
+import { type Ticket, type RoutingResult, TicketStatus, TicketPriority, UserRole } from '../../types';
 import api from '../../api/axios';
+import { useAuth } from '../../store/authContext';
+import { format } from 'date-fns';
 
 /* ─── Styles ──────────────────────────────────────────────── */
 const injectStyles = () => {
-  if (document.getElementById('tc-styles')) return;
+  if (document.getElementById('td-styles')) return;
   const s = document.createElement('style');
-  s.id = 'tc-styles';
+  s.id = 'td-styles';
   s.textContent = `
     @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
-    @keyframes tc-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }
-    @keyframes tc-float { 0%,100%{transform:translateY(0) rotate(0deg)} 50%{transform:translateY(-8px) rotate(1deg)} }
-    @keyframes tc-in-r { from{opacity:0;transform:translateX(-20px)} to{opacity:1;transform:translateX(0)} }
-    @keyframes tc-in-l { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:translateX(0)} }
-    @keyframes tc-up { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
-    @keyframes tc-spin { to{transform:rotate(360deg)} }
-    @keyframes tc-success { 0%{transform:scale(.5);opacity:0} 70%{transform:scale(1.15)} 100%{transform:scale(1);opacity:1} }
-    .tc-input {
-      width:100%; padding:.875rem 1.125rem;
-      background:rgba(255,255,255,.04); border:1.5px solid rgba(255,255,255,.1);
-      border-radius:12px; color:rgba(255,255,255,.82);
-      font-size:.9375rem; font-family:'DM Sans',sans-serif;
-      outline:none; transition:border-color .2s,box-shadow .2s,background .2s;
-      box-sizing:border-box; resize:none;
+    @keyframes td-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }
+    @keyframes td-in-up { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes td-spin { to{transform:rotate(360deg)} }
+    @keyframes td-shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+    .td-glass { background:rgba(15,15,25,.72); border:1px solid rgba(255,255,255,.07); backdrop-filter:blur(20px); }
+    .td-action-btn { transition:all .2s; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.04); color:rgba(255,255,255,.5); cursor:pointer; }
+    .td-action-btn:hover { background:rgba(139,92,246,.15); color:#c4b5fd; border-color:rgba(139,92,246,.3); }
+    .td-auto-btn { background:linear-gradient(135deg,rgba(139,92,246,.2) 0%,rgba(236,72,153,.2) 100%) !important; border:1px solid rgba(139,92,246,.3) !important; color:#c4b5fd !important; }
+    .td-auto-btn:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(139,92,246,.25); }
+    .td-auto-btn:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+    
+    /* AI Specific Styles */
+    .ai-smart-card {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(15, 15, 25, 0.8) 100%);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      border-radius: 20px;
+      overflow: hidden;
+      position: relative;
     }
-    .tc-input::placeholder { color:rgba(255,255,255,.22); }
-    .tc-input:focus { border-color:rgba(139,92,246,.6); box-shadow:0 0 0 3px rgba(139,92,246,.14); background:rgba(139,92,246,.055); }
-    .tc-input option { background:#13101f; color:#e2e8f0; }
-    .tc-pri-btn { transition:all .2s; cursor:pointer; border:1.5px solid rgba(255,255,255,.1); border-radius:10px; padding:.6rem 1rem; font-size:.78rem; font-weight:700; font-family:'DM Sans',sans-serif; }
-    .tc-submit:hover { transform:translateY(-2px); box-shadow:0 16px 40px rgba(139,92,246,.5) !important; }
-    .tc-ai-card { animation:tc-float 4s ease-in-out infinite; }
-    .tc-ai-card:nth-child(2){animation-delay:-1.3s}
-    .tc-ai-card:nth-child(3){animation-delay:-2.5s}
-    .tc-drop-zone { transition:all .25s; cursor:pointer; }
-    .tc-drop-zone:hover { border-color:rgba(139,92,246,.5) !important; background:rgba(139,92,246,.06) !important; }
-    .tc-file-item { transition:all .2s; }
-    .tc-file-item:hover { background:rgba(139,92,246,.1) !important; }
+    .ai-shimmer {
+      background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.1), transparent);
+      background-size: 200% 100%;
+      animation: td-shimmer 2s infinite;
+    }
+    .suggestion-chip {
+      padding: 0.4rem 0.8rem;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .suggestion-chip:hover {
+      background: rgba(139, 92, 246, 0.12);
+      border-color: rgba(139, 92, 246, 0.3);
+      color: #c4b5fd;
+      transform: translateY(-1px);
+    }
+    .ai-input-area {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 1rem;
+      color: rgba(255, 255, 255, 0.8);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      resize: vertical;
+      min-height: 100px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .ai-input-area:focus {
+      border-color: rgba(139, 92, 246, 0.4);
+    }
   `;
   document.head.appendChild(s);
 };
 
-const priorityMeta: Record<string, { color: string; glow: string }> = {
-  LOW:      { color: '#34d399', glow: 'rgba(52,211,153,.25)' },
-  MEDIUM:   { color: '#60a5fa', glow: 'rgba(96,165,250,.28)' },
-  HIGH:     { color: '#fb923c', glow: 'rgba(251,146,60,.3)' },
-  CRITICAL: { color: '#f87171', glow: 'rgba(239,68,68,.35)' },
+const priorityConfig: Record<string, { color: string; bg: string; label: string }> = {
+  URGENT:   { color: '#f87171', bg: 'rgba(239,68,68,.1)', label: 'Urgent' },
+  HIGH:     { color: '#fb923c', bg: 'rgba(251,146,60,.1)', label: 'High' },
+  MEDIUM:   { color: '#60a5fa', bg: 'rgba(96,165,250,.1)', label: 'Medium' },
+  LOW:      { color: '#34d399', bg: 'rgba(52,211,153,.1)', label: 'Low' },
 };
 
-/* ─── AI Suggestion ───────────────────────────────────────── */
-const AiCard: React.FC<{ icon: React.ReactNode; title: string; body: string; color: string; delay?: number }> = ({ icon, title, body, color, delay = 0 }) => (
-  <div className="tc-ai-card" style={{ padding: '.875rem 1rem', background: `rgba(${color},.07)`, border: `1px solid rgba(${color},.22)`, borderRadius: 13, animation: `tc-up .5s ease ${delay}ms both` }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: '.55rem', marginBottom: '.4rem' }}>
-      <div style={{ color: `rgb(${color})`, flexShrink: 0 }}>{icon}</div>
-      <span style={{ fontSize: '.72rem', fontWeight: 700, color: `rgb(${color})`, letterSpacing: '.04em' }}>{title}</span>
-      <div style={{ marginLeft: 'auto', width: 5, height: 5, borderRadius: '50%', background: `rgb(${color})`, animation: 'tc-pulse 2s infinite', flexShrink: 0 }} />
-    </div>
-    <p style={{ fontSize: '.78rem', color: 'rgba(255,255,255,.45)', lineHeight: 1.55, margin: 0 }}>{body}</p>
-  </div>
+const Circle: React.FC<{ size: number }> = ({ size }) => (
+  <div style={{ width: size, height: size, borderRadius: '50%', border: '2px solid currentColor' }} />
 );
 
-/* ─── MAIN ────────────────────────────────────────────────── */
-const TicketCreate: React.FC = () => {
+const statusConfig: Record<string, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
+  OPEN:        { color: '#60a5fa', bg: 'rgba(96,165,250,.12)', icon: <Circle size={12} />, label: 'Open' },
+  IN_PROGRESS: { color: '#a78bfa', bg: 'rgba(167,139,250,.12)', icon: <Activity size={12} />, label: 'In Progress' },
+  RESOLVED:    { color: '#34d399', bg: 'rgba(52,211,153,.12)', icon: <CheckCircle2 size={12} />, label: 'Resolved' },
+  CLOSED:      { color: '#64748b', bg: 'rgba(100,116,139,.12)', icon: <XCircle size={12} />, label: 'Closed' },
+};
+
+const TicketDetails: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
-  const [formData, setFormData] = useState({
-    subject: '',
-    description: '',
-    category: 'Technical Support',
-    subcategory: '',
-    priority: TicketPriority.MEDIUM as TicketPriority,
-    channel: TicketChannel.WEB as TicketChannel,
-  });
+  const { user } = useAuth();
+  const [ticket, setTicket] = useState<Ticket | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  // AI States
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiResult, setAiResult] = useState<any>(null);
+  const [editableResponse, setEditableResponse] = useState('');
+  
+  const [isRouting, setIsRouting] = useState(false);
+  const [routingResult, setRoutingResult] = useState<RoutingResult | null>(null);
 
   useEffect(() => { injectStyles(); }, []);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true); setError('');
+  const fetchTicket = async () => {
     try {
-      const res = await api.post('/tickets/create', formData);
-      const ticketId = res.data?.id;
-      if (files.length > 0 && ticketId) {
-        for (const file of files) {
-          const fd = new FormData(); fd.append('file', file);
-          try { await api.post(`/tickets/${ticketId}/attachments`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }); }
-          catch { /* silent */ }
-        }
-      }
-      navigate('/tickets');
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to submit ticket. Please try again.');
-    } finally { setLoading(false); }
+      const res = await api.get(`/tickets/${id}`);
+      setTicket(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const aiCards = [
-    { icon: <Brain size={13} />, title: 'AI Classification', body: 'Ticket routed to Infrastructure Support based on subject analysis.', color: '139,92,246' },
-    { icon: <Target size={13} />, title: 'Suggested Priority', body: formData.priority === 'CRITICAL' || formData.priority === 'HIGH' ? 'Confirmed High — SLA clock starts on submit.' : 'AI agrees with selected priority level.', color: '96,165,250' },
-    { icon: <Clock size={13} />, title: 'Est. Resolution', body: '~2–4 hours based on category baseline performance.', color: '52,211,153' },
-    { icon: <AlertTriangle size={13} />, title: 'Duplicate Check', body: 'No duplicate incidents found in the last 7 days.', color: '251,146,60' },
-  ];
+  useEffect(() => {
+    if (id) fetchTicket();
+  }, [id]);
+
+  const handleAutoRoute = async () => {
+    if (!id) return;
+    setIsRouting(true);
+    setRoutingResult(null);
+    try {
+      const res = await api.post<RoutingResult>(`/tickets/${id}/auto-route`);
+      setRoutingResult(res.data);
+      fetchTicket(); 
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsRouting(false);
+    }
+  };
+
+  const handleGenerateAiResponse = async () => {
+    if (!id) return;
+    setIsGenerating(true);
+    try {
+      const res = await api.post(`/ai/tickets/${id}/generate-response`);
+      setAiResult(res.data);
+      setEditableResponse(res.data.generated_response);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSendResponse = async () => {
+    // Mock send - in real app, call /tickets/{id}/send-ai-response
+    alert("Response sent to user via email!");
+    setAiResult(null);
+  };
+
+  if (loading) return (
+    <div style={{ height: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '1rem' }}>
+      <Loader2 size={40} className="animate-spin" style={{ color: '#8b5cf6', animation: 'td-spin 1s linear infinite' }} />
+      <span style={{ color: 'rgba(255,255,255,.3)', fontSize: '.875rem', fontWeight: 600 }}>Analyzing ticket sequence…</span>
+    </div>
+  );
+
+  if (!ticket) return <div>Ticket not found</div>;
+
+  const prio = priorityConfig[ticket.priority] || priorityConfig.MEDIUM;
+  const stat = statusConfig[ticket.status] || statusConfig.OPEN;
 
   return (
-    <div style={{ fontFamily: "'DM Sans',sans-serif", display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      {/* Back */}
-      <button onClick={() => navigate(-1)} style={{ display: 'inline-flex', alignItems: 'center', gap: '.5rem', color: 'rgba(255,255,255,.32)', fontWeight: 600, fontSize: '.875rem', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: "'DM Sans',sans-serif", width: 'fit-content', transition: 'color .15s' }}
-        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#c4b5fd'}
-        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,.32)'}
-      >
-        <ArrowLeft size={16} /> Back to Tickets
-      </button>
-
-      {/* Split layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.35fr)', gap: '2rem', alignItems: 'start' }}>
-
-        {/* ── LEFT PANEL ─────────────────────────────────────── */}
-        <div style={{ position: 'relative', borderRadius: 24, overflow: 'hidden', background: 'linear-gradient(160deg,rgba(18,8,42,.97) 0%,rgba(10,10,22,.97) 100%)', border: '1px solid rgba(139,92,246,.2)', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.75rem', animation: 'tc-in-r .6s ease both' }}>
-          {/* Orbs */}
-          <div style={{ position: 'absolute', top: -60, right: -50, width: 200, height: 200, borderRadius: '50%', background: 'radial-gradient(circle,rgba(139,92,246,.22) 0%,transparent 70%)', pointerEvents: 'none', animation: 'tc-float 6s ease-in-out infinite' }} />
-          <div style={{ position: 'absolute', bottom: 60, left: -40, width: 150, height: 150, borderRadius: '50%', background: 'radial-gradient(circle,rgba(236,72,153,.12) 0%,transparent 70%)', pointerEvents: 'none', animation: 'tc-float 8s ease-in-out infinite' }} />
-
-          {/* Label */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
-            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#8b5cf6', animation: 'tc-pulse 2s infinite' }} />
-            <span style={{ fontSize: '.68rem', fontWeight: 700, color: 'rgba(139,92,246,.7)', letterSpacing: '.1em', textTransform: 'uppercase' }}>AI Ticket Intelligence</span>
-          </div>
-
-          {/* Heading */}
-          <div style={{ position: 'relative' }}>
-            <h1 style={{ fontFamily: "'DM Serif Display',serif", fontSize: 'clamp(1.625rem,2.5vw,2.25rem)', color: '#f1f5f9', lineHeight: 1.18, letterSpacing: '-0.02em', margin: '0 0 .875rem' }}>
-              Create{' '}
-              <span style={{ fontStyle: 'italic', background: 'linear-gradient(135deg,#a78bfa,#ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>intelligent</span>
-              {' '}support requests.
-            </h1>
-            <p style={{ color: 'rgba(255,255,255,.38)', fontSize: '.875rem', lineHeight: 1.65, margin: 0 }}>
-              Our AI automatically classifies your ticket, routes it to the right team, predicts priority, and estimates resolution time — all before you hit submit.
-            </p>
-          </div>
-
-          {/* AI suggestion cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '.6rem' }}>
-            {aiCards.map((c, i) => <AiCard key={i} {...c} delay={i * 100} />)}
-          </div>
-
-          {/* Stats */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '.45rem' }}>
-            <div style={{ fontSize: '.68rem', fontWeight: 700, color: 'rgba(255,255,255,.22)', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: '.2rem' }}>Live Intelligence</div>
-            {[
-              { label: 'AI Routing Accuracy', val: '97%', color: '#a78bfa' },
-              { label: 'Avg First Response', val: '8 min', color: '#34d399' },
-              { label: 'SLA Compliance', val: '92%', color: '#60a5fa' },
-            ].map(({ label, val, color }, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '.65rem .9rem', borderRadius: 9, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', transition: 'background .2s' }}>
-                <span style={{ fontSize: '.78rem', color: 'rgba(255,255,255,.38)', fontWeight: 500 }}>{label}</span>
-                <span style={{ fontSize: '.875rem', fontWeight: 700, color }}>{val}</span>
-              </div>
-            ))}
+    <div style={{ fontFamily: "'DM Sans',sans-serif", display: 'flex', flexDirection: 'column', gap: '2rem', animation: 'td-in-up .6s ease both' }}>
+      
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <button onClick={() => navigate('/tickets')} className="td-action-btn" style={{ padding: '.5rem', borderRadius: 10 }}>
+            <ArrowLeft size={18} />
+          </button>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', marginBottom: '.25rem' }}>
+              <span style={{ fontFamily: 'monospace', fontSize: '.875rem', fontWeight: 700, color: 'rgba(139,92,246,.7)' }}>#{ticket.id.slice(-6).toUpperCase()}</span>
+              <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'rgba(255,255,255,.1)' }} />
+              <span style={{ fontSize: '.75rem', color: 'rgba(255,255,255,.3)' }}>Created {format(new Date(ticket.created_at), 'MMM dd, yyyy HH:mm')}</span>
+            </div>
+            <h1 style={{ fontFamily: "'DM Serif Display',serif", fontSize: '1.75rem', color: '#f1f5f9', margin: 0 }}>{ticket.subject}</h1>
           </div>
         </div>
 
-        {/* ── RIGHT PANEL ────────────────────────────────────── */}
-        <div style={{ borderRadius: 24, background: 'rgba(15,12,28,.88)', border: '1px solid rgba(255,255,255,.09)', backdropFilter: 'blur(24px)', padding: '2rem', boxShadow: '0 32px 64px rgba(0,0,0,.4)', animation: 'tc-in-l .6s ease both' }}>
-          {/* Header */}
-          <div style={{ marginBottom: '1.75rem' }}>
-            <div style={{ width: 44, height: 44, borderRadius: 13, background: 'rgba(139,92,246,.12)', border: '1px solid rgba(139,92,246,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '.875rem' }}>
-              <Zap size={20} style={{ color: '#a78bfa' }} />
-            </div>
-            <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: '1.5rem', color: '#f1f5f9', margin: '0 0 .35rem', letterSpacing: '-0.02em' }}>New Support Ticket</h2>
-            <p style={{ fontSize: '.875rem', color: 'rgba(255,255,255,.32)', margin: 0 }}>AI will classify and route automatically on submission.</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem' }}>
+          {user?.role !== UserRole.USER && (ticket.status === 'OPEN' || ticket.status === 'IN_PROGRESS') && (
+            <button 
+              className="td-action-btn td-auto-btn" 
+              onClick={handleAutoRoute}
+              disabled={isRouting}
+              style={{ padding: '.6rem 1.25rem', borderRadius: 12, fontSize: '.875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '.5rem' }}
+            >
+              {isRouting ? <Loader2 size={16} className="animate-spin" style={{ animation: 'td-spin 1s linear infinite' }} /> : <Bot size={16} />}
+              Auto Route
+            </button>
+          )}
+          <div style={{ padding: '.4rem .875rem', borderRadius: 8, background: prio.bg, border: `1px solid ${prio.color}30`, color: prio.color, fontSize: '.75rem', fontWeight: 700 }}>
+            {prio.label}
+          </div>
+          <div style={{ padding: '.4rem .875rem', borderRadius: 8, background: stat.bg, border: `1px solid ${stat.color}30`, color: stat.color, fontSize: '.75rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '.4rem' }}>
+            {stat.icon} {stat.label}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '2rem', alignItems: 'start' }}>
+        
+        {/* Left Content */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          
+          {/* AI Kopilot Section */}
+          <div className="ai-smart-card" style={{ padding: '1.5rem' }}>
+             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa' }}>
+                    <Brain size={22} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f1f5f9' }}>AI Smart Reply</h3>
+                    <p style={{ margin: 0, fontSize: '.75rem', color: 'rgba(255,255,255,.4)' }}>Generate professional responses and solutions.</p>
+                  </div>
+                </div>
+                {!aiResult && !isGenerating && (
+                  <button onClick={handleGenerateAiResponse} className="td-auto-btn" style={{ padding: '.6rem 1.25rem', borderRadius: 12, fontSize: '.875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                    <Sparkles size={16} /> Generate AI Response
+                  </button>
+                )}
+             </div>
+
+             {isGenerating && (
+               <div style={{ padding: '2rem', textAlign: 'center' }}>
+                 <Loader2 size={32} className="animate-spin" style={{ color: '#8b5cf6', margin: '0 auto 1rem', animation: 'td-spin 1s linear infinite' }} />
+                 <p style={{ fontSize: '.875rem', color: 'rgba(255,255,255,.5)' }}>Gemma3 is analyzing ticket intent and drafting response...</p>
+                 <div className="ai-shimmer" style={{ height: 4, width: '100%', borderRadius: 2, marginTop: '1rem' }} />
+               </div>
+             )}
+
+             {aiResult && (
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', animation: 'td-in-up 0.4s ease both' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(139,92,246,0.1)', padding: '.75rem 1rem', borderRadius: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Target size={14} style={{ color: '#a78bfa' }} />
+                      <span style={{ fontSize: '.75rem', fontWeight: 700, color: '#a78bfa' }}>INTENT: {aiResult.intent}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Award size={14} style={{ color: aiResult.confidence_score > 85 ? '#34d399' : '#fb923c' }} />
+                      <span style={{ fontSize: '.75rem', fontWeight: 700, color: '#f1f5f9' }}>{aiResult.confidence_score}% Confidence</span>
+                      <span style={{ fontSize: '.6rem', padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, color: 'rgba(255,255,255,0.4)' }}>{aiResult.match_quality}</span>
+                    </div>
+                  </div>
+
+                  <textarea 
+                    className="ai-input-area"
+                    value={editableResponse}
+                    onChange={(e) => setEditableResponse(e.target.value)}
+                    placeholder="AI generated response..."
+                  />
+
+                  <div>
+                    <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Info size={12} /> Tech Suggestions
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      {aiResult.suggestions.map((s: string, i: number) => (
+                        <div key={i} className="suggestion-chip" onClick={() => setEditableResponse(prev => prev + "\n\n💡 Suggestion: " + s)}>
+                          <Zap size={12} /> {s}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1.25rem' }}>
+                    <button onClick={() => setAiResult(null)} className="td-action-btn" style={{ padding: '.6rem 1.25rem', borderRadius: 12, fontSize: '.875rem', fontWeight: 700 }}>
+                      Discard
+                    </button>
+                    <button onClick={handleSendResponse} className="td-auto-btn" style={{ flex: 1, padding: '.6rem 1.25rem', borderRadius: 12, fontSize: '.875rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                      <Check size={18} /> Approve & Send Response
+                    </button>
+                  </div>
+               </div>
+             )}
           </div>
 
-          {/* Error */}
-          {error && (
-            <div style={{ marginBottom: '1.25rem', padding: '.875rem 1rem', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.25)', borderRadius: 10, color: '#f87171', fontSize: '.875rem', fontWeight: 600 }}>
-              {error}
+          {/* AI Routing Result Banner or Persistent Reason */}
+          {(routingResult || ticket.routing_reason) && (
+            <div className="td-glass" style={{ borderRadius: 20, padding: '1.5rem', border: '1px solid rgba(139,92,246,.3)', background: 'linear-gradient(135deg,rgba(139,92,246,.1) 0%,rgba(15,15,25,.72) 100%)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(139,92,246,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa' }}>
+                    <Sparkles size={20} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '.9375rem', fontWeight: 700, color: '#f1f5f9' }}>
+                      {routingResult ? "AI Routing Successful" : "AI Routing Insights"}
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '.75rem', color: 'rgba(255,255,255,.4)' }}>
+                      {routingResult ? "The ticket has been intelligently assigned." : "Historical routing context for this ticket."}
+                    </p>
+                  </div>
+                </div>
+                {routingResult && (
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#a78bfa' }}>{routingResult.confidence_score}%</div>
+                    <div style={{ fontSize: '.6rem', fontWeight: 700, color: 'rgba(139,92,246,.7)', textTransform: 'uppercase' }}>Match Score</div>
+                  </div>
+                )}
+              </div>
+              
+              {routingResult && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div style={{ padding: '1rem', borderRadius: 12, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
+                    <div style={{ fontSize: '.65rem', fontWeight: 700, color: 'rgba(255,255,255,.25)', textTransform: 'uppercase', marginBottom: '.25rem' }}>Assigned Agent</div>
+                    <div style={{ fontSize: '.875rem', fontWeight: 600, color: '#f1f5f9' }}>{routingResult.agent_name}</div>
+                  </div>
+                  <div style={{ padding: '1rem', borderRadius: 12, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
+                    <div style={{ fontSize: '.65rem', fontWeight: 700, color: 'rgba(255,255,255,.25)', textTransform: 'uppercase', marginBottom: '.25rem' }}>Best Match Team</div>
+                    <div style={{ fontSize: '.875rem', fontWeight: 600, color: '#f1f5f9' }}>{routingResult.team_name}</div>
+                  </div>
+                </div>
+              )}
+              
+              <div style={{ padding: '1rem', borderRadius: 12, background: 'rgba(139,92,246,.05)', border: '1px solid rgba(139,92,246,.15)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '.35rem' }}>
+                  <Bot size={14} style={{ color: '#a78bfa' }} />
+                  <span style={{ fontSize: '.7rem', fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase' }}>Routing Rationale</span>
+                </div>
+                <p style={{ margin: 0, fontSize: '.78rem', color: 'rgba(255,255,255,.5)', lineHeight: 1.5 }}>
+                  {routingResult ? routingResult.routing_reason : ticket.routing_reason}
+                </p>
+              </div>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            {/* Subject */}
-            <Field label="Subject" required>
-              <input className="tc-input" type="text" name="subject" required placeholder="Briefly describe the issue…" value={formData.subject} onChange={handleChange} />
-            </Field>
-
-            {/* Category + Priority */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <Field label="Category">
-                <select className="tc-input" name="category" value={formData.category} onChange={handleChange} style={{ cursor: 'pointer' }}>
-                  {['Technical Support', 'Billing & Invoices', 'Feature Request', 'General Inquiry', 'Infrastructure', 'Security'].map(c => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Channel">
-                <select className="tc-input" name="channel" value={formData.channel} onChange={handleChange} style={{ cursor: 'pointer' }}>
-                  {Object.values(TicketChannel).map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </Field>
+          {/* Description */}
+          <div className="td-glass" style={{ borderRadius: 24, padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div>
+              <h3 style={{ fontSize: '.72rem', fontWeight: 700, color: 'rgba(255,255,255,.28)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '1rem' }}>Description</h3>
+              <div style={{ fontSize: '.9375rem', color: 'rgba(255,255,255,.7)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{ticket.description}</div>
             </div>
-
-            {/* Priority selector */}
-            <Field label="Priority">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '.5rem' }}>
-                {Object.values(TicketPriority).map(p => {
-                  const meta = priorityMeta[p] ?? priorityMeta.MEDIUM;
-                  const active = formData.priority === p;
-                  return (
-                    <button key={p} type="button" className="tc-pri-btn" onClick={() => setFormData({ ...formData, priority: p })} style={{ background: active ? `rgba(${meta.color.replace('#', '')},0)` : 'rgba(255,255,255,.03)', borderColor: active ? meta.color : 'rgba(255,255,255,.1)', color: active ? meta.color : 'rgba(255,255,255,.38)', boxShadow: active ? `0 0 14px ${meta.glow}` : 'none' }}>
-                      {p}
-                    </button>
-                  );
-                })}
-              </div>
-            </Field>
-
-            {/* Sub-category */}
-            <Field label="Sub-category" hint="Optional — helps AI narrow routing">
-              <input className="tc-input" type="text" name="subcategory" placeholder="e.g. Database, Authentication, Payment…" value={formData.subcategory} onChange={handleChange} />
-            </Field>
-
-            {/* Description */}
-            <Field label="Description" required>
-              <textarea className="tc-input" name="description" required rows={5} placeholder="Provide detailed context about the issue, steps to reproduce, and expected vs actual behaviour…" value={formData.description} onChange={handleChange} />
-            </Field>
-
-            {/* Attachments */}
-            <Field label="Attachments">
-              <div className="tc-drop-zone" onClick={() => document.getElementById('tc-file')?.click()} style={{ borderRadius: 14, border: '1.5px dashed rgba(255,255,255,.14)', padding: '1.75rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '.625rem', background: 'rgba(255,255,255,.02)' }}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(139,92,246,.1)', border: '1px solid rgba(139,92,246,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Upload size={18} style={{ color: '#a78bfa' }} />
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: '.8rem', fontWeight: 600, color: 'rgba(255,255,255,.5)', margin: '0 0 .2rem' }}>Click to upload or drag & drop</p>
-                  <p style={{ fontSize: '.72rem', color: 'rgba(255,255,255,.25)', margin: 0 }}>PNG, JPG, PDF up to 10 MB</p>
-                </div>
-                <input id="tc-file" type="file" multiple style={{ display: 'none' }} onChange={handleFiles} />
-              </div>
-              {files.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '.5rem', marginTop: '.75rem' }}>
-                  {files.map((f, i) => (
-                    <div key={i} className="tc-file-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '.6rem .875rem', background: 'rgba(139,92,246,.08)', border: '1px solid rgba(139,92,246,.18)', borderRadius: 10 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', overflow: 'hidden' }}>
-                        <Upload size={13} style={{ color: '#a78bfa', flexShrink: 0 }} />
-                        <span style={{ fontSize: '.72rem', fontWeight: 600, color: 'rgba(255,255,255,.6)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-                      </div>
-                      <button type="button" onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'rgba(255,255,255,.3)', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
-                        <X size={13} />
-                      </button>
-                    </div>
+            
+            {ticket.attachments && ticket.attachments.length > 0 && (
+              <div>
+                <h3 style={{ fontSize: '.72rem', fontWeight: 700, color: 'rgba(255,255,255,.28)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '1rem' }}>Attachments</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
+                  {ticket.attachments.map((at, i) => (
+                    <a key={i} href={at} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '.75rem', padding: '.75rem 1rem', borderRadius: 12, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.08)', color: 'rgba(255,255,255,.6)', textDecoration: 'none', fontSize: '.8125rem', transition: 'all .2s' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = 'rgba(139,92,246,.4)'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,.08)'}
+                    >
+                      <Paperclip size={16} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{at.split('/').pop()}</span>
+                    </a>
                   ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Activity / Messages (Mock for now) */}
+          <div className="td-glass" style={{ borderRadius: 24, padding: '2rem' }}>
+            <h3 style={{ fontSize: '.72rem', fontWeight: 700, color: 'rgba(255,255,255,.28)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+              <MessageSquare size={14} /> Activity Stream
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(139,92,246,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa', flexShrink: 0 }}>
+                  <Bot size={16} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '.25rem' }}>
+                    <span style={{ fontSize: '.8125rem', fontWeight: 700, color: '#f1f5f9' }}>GEISER AI</span>
+                    <span style={{ fontSize: '.65rem', color: 'rgba(255,255,255,.2)' }}>{format(new Date(ticket.created_at), 'HH:mm')}</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '.875rem', color: 'rgba(255,255,255,.5)', lineHeight: 1.5 }}>Ticket initialized and awaiting manual review or auto-routing triggers.</p>
+                </div>
+              </div>
+              
+              {/* Message Input */}
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', padding: '1rem', borderRadius: 16, background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.05)' }}>
+                <input placeholder="Add a comment…" style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#f1f5f9', fontSize: '.875rem' }} />
+                <button style={{ background: 'none', border: 'none', color: '#8b5cf6', cursor: 'pointer' }}><Send size={18} /></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Sidebar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          
+          {/* Metadata Card */}
+          <div className="td-glass" style={{ borderRadius: 20, padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <h4 style={{ margin: 0, fontSize: '.75rem', fontWeight: 700, color: 'rgba(255,255,255,.5)', letterSpacing: '.05em', textTransform: 'uppercase' }}>Ticket Info</h4>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <div style={{ fontSize: '.65rem', color: 'rgba(255,255,255,.25)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '.25rem' }}>Category</div>
+                <div style={{ fontSize: '.875rem', color: '#f1f5f9', fontWeight: 600 }}>{ticket.category}</div>
+              </div>
+              {ticket.subcategory && (
+                <div>
+                  <div style={{ fontSize: '.65rem', color: 'rgba(255,255,255,.25)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '.25rem' }}>Subcategory</div>
+                  <div style={{ fontSize: '.875rem', color: '#f1f5f9', fontWeight: 600 }}>{ticket.subcategory}</div>
                 </div>
               )}
-            </Field>
+              <div>
+                <div style={{ fontSize: '.65rem', color: 'rgba(255,255,255,.25)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '.25rem' }}>Channel</div>
+                <div style={{ fontSize: '.875rem', color: '#f1f5f9', fontWeight: 600 }}>{ticket.channel}</div>
+              </div>
+            </div>
+          </div>
 
-            {/* AI confidence strip */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem', padding: '.875rem 1rem', borderRadius: 12, background: 'rgba(139,92,246,.07)', border: '1px solid rgba(139,92,246,.16)' }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(139,92,246,.14)', border: '1px solid rgba(139,92,246,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Cpu size={15} style={{ color: '#a78bfa' }} />
+          {/* Assignment Card */}
+          <div className="td-glass" style={{ borderRadius: 20, padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <h4 style={{ margin: 0, fontSize: '.75rem', fontWeight: 700, color: 'rgba(255,255,255,.5)', letterSpacing: '.05em', textTransform: 'uppercase' }}>Assignment</h4>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,.2)' }}>
+                {ticket.assigned_agent_id ? <User size={24} /> : <Shield size={24} />}
               </div>
               <div>
-                <div style={{ fontSize: '.72rem', fontWeight: 700, color: 'rgba(167,139,250,.8)', marginBottom: '.12rem' }}>AI Confidence: 94%</div>
-                <div style={{ fontSize: '.72rem', color: 'rgba(255,255,255,.38)', lineHeight: 1.4 }}>Classification complete · Infrastructure Support · Est. 2–4h resolution</div>
+                <div style={{ fontSize: '.875rem', fontWeight: 700, color: ticket.assigned_agent_id ? '#f1f5f9' : 'rgba(255,255,255,.3)' }}>
+                  {ticket.assigned_agent_id ? "Agent Assigned" : "Unassigned"}
+                </div>
+                <div style={{ fontSize: '.75rem', color: 'rgba(255,255,255,.3)' }}>{ticket.assigned_agent_id || "Awaiting routing"}</div>
               </div>
             </div>
+            
+            {ticket.assigned_agent_id && (
+               <div style={{ padding: '.75rem', borderRadius: 12, background: 'rgba(52,211,153,.05)', border: '1px solid rgba(52,211,153,.15)', display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                 <CheckCircle2 size={14} style={{ color: '#34d399' }} />
+                 <span style={{ fontSize: '.75rem', color: '#34d399', fontWeight: 600 }}>SLA Active: 2h left</span>
+               </div>
+            )}
+          </div>
 
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: '.875rem', paddingTop: '.25rem' }}>
-              <button type="button" onClick={() => navigate(-1)} style={{ padding: '.875rem 1.5rem', borderRadius: 12, background: 'rgba(255,255,255,.04)', border: '1.5px solid rgba(255,255,255,.1)', color: 'rgba(255,255,255,.4)', fontWeight: 700, fontSize: '.9375rem', cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all .2s' }}>
-                Cancel
-              </button>
-              <button type="submit" disabled={loading} className="tc-submit" style={{ flex: 1, padding: '.875rem 1.5rem', borderRadius: 12, background: loading ? 'rgba(139,92,246,.3)' : 'linear-gradient(135deg,#7c3aed,#8b5cf6)', color: loading ? 'rgba(255,255,255,.5)' : '#fff', fontWeight: 700, fontSize: '.9375rem', border: 'none', cursor: loading ? 'not-allowed' : 'pointer', boxShadow: loading ? 'none' : '0 8px 24px rgba(139,92,246,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '.5rem', transition: 'all .25s', fontFamily: "'DM Sans',sans-serif" }}>
-                {loading ? <><Loader2 size={17} style={{ animation: 'tc-spin 1s linear infinite' }} /> Submitting…</> : <><Zap size={17} /> Submit Ticket</>}
-              </button>
+          {/* AI Insights Sidebar */}
+          <div style={{ background: 'linear-gradient(180deg,rgba(139,92,246,.1) 0%,transparent 100%)', borderRadius: 20, padding: '1.5rem', border: '1px solid rgba(139,92,246,.15)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '1rem' }}>
+              <Zap size={16} style={{ color: '#8b5cf6' }} />
+              <span style={{ fontSize: '.75rem', fontWeight: 700, color: '#f1f5f9', letterSpacing: '.05em', textTransform: 'uppercase' }}>AI Insights</span>
             </div>
-          </form>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {[
+                { label: 'Complexity', val: 'Low', color: '#34d399', icon: <Activity size={12} /> },
+                { label: 'Priority Rec', val: ticket.priority, color: prio.color, icon: <AlertTriangle size={12} /> },
+                { label: 'Sentiment', val: 'Neutral', color: '#60a5fa', icon: <Award size={12} /> },
+              ].map((ins, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', color: 'rgba(255,255,255,.3)' }}>
+                    {ins.icon}
+                    <span style={{ fontSize: '.75rem' }}>{ins.label}</span>
+                  </div>
+                  <span style={{ fontSize: '.75rem', fontWeight: 700, color: ins.color }}>{ins.val}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
   );
 };
 
-/* ─── Field wrapper ───────────────────────────────────────── */
-const Field: React.FC<{ label: string; required?: boolean; hint?: string; children: React.ReactNode }> = ({ label, required, hint, children }) => (
-  <div>
-    <label style={{ display: 'block', marginBottom: '.45rem', fontSize: '.72rem', fontWeight: 700, color: 'rgba(255,255,255,.38)', letterSpacing: '.06em', textTransform: 'uppercase' }}>
-      {label} {required && <span style={{ color: '#f87171' }}>*</span>}
-    </label>
-    {children}
-    {hint && <p style={{ marginTop: '.35rem', fontSize: '.72rem', color: 'rgba(255,255,255,.22)', lineHeight: 1.5 }}>{hint}</p>}
-  </div>
-);
-
-export default TicketCreate;
+export default TicketDetails;

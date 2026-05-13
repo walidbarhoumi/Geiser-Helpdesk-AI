@@ -203,6 +203,7 @@ class TicketUpdate(BaseModel):
     status: Optional[TicketStatus] = None
     priority: Optional[TicketPriority] = None
     assigned_agent_id: Optional[str] = None
+    routing_reason: Optional[str] = None
 
 
 class StatusUpdateRequest(BaseModel):
@@ -226,9 +227,47 @@ class TicketOut(BaseModel):
     status: TicketStatus
     user_id: str
     assigned_agent_id: Optional[str] = None
+    routing_reason: Optional[str] = None
     attachments: List[str] = []
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        populate_by_name = True
+
+
+class RoutingResult(BaseModel):
+    id: Optional[str] = None
+    ticket_id: str
+    selected_team: Optional[str] = None
+    selected_agent: Optional[str] = None
+    team_name: str
+    agent_name: str
+    confidence_score: float
+    match_quality: str
+    routing_reason: str
+    created_at: datetime
+
+
+class KnowledgeBaseItem(BaseModel):
+    title: str
+    category: str
+    keywords: List[str]
+    auto_response: str
+    suggestions: List[str]
+    confidence_threshold: float = 0.7
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AIHistoryRecord(BaseModel):
+    ticket_id: str
+    generated_response: str
+    suggestions: List[str]
+    confidence_score: float
+    intent: str
+    accepted: bool = False
+    resolved: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
         populate_by_name = True

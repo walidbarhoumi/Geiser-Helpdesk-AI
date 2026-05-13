@@ -48,6 +48,7 @@ export type Ticket = {
   status: TicketStatus;
   user_id: string;
   assigned_agent_id?: string | null;
+  routing_reason?: string;
   attachments: string[];
   created_at: string;
   updated_at: string;
@@ -77,4 +78,17 @@ export type AuthResponse = {
 /** Shape of the login response (token + user) */
 export type LoginResponse = AuthResponse & {
   user: User;
+};
+
+export type RoutingResult = {
+  id?: string;
+  ticket_id: string;
+  selected_team?: string;
+  selected_agent?: string;
+  team_name: string;
+  agent_name: string;
+  confidence_score: number;
+  match_quality: string;
+  routing_reason: string;
+  created_at: string;
 };

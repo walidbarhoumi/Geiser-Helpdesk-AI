@@ -244,7 +244,7 @@ const Sidebar: React.FC = () => {
       label: 'Workspace',
       items: [
         { to: '/',        icon: <LayoutDashboard size={17} />, label: 'Dashboard' },
-        { to: '/tickets', icon: <Ticket          size={17} />, label: 'Tickets'   },
+        
       ]
     },
     ...(user?.role === UserRole.ADMIN || user?.role === UserRole.AGENT ? [{
@@ -252,6 +252,7 @@ const Sidebar: React.FC = () => {
       items: [
         { to: '/teams',  icon: <Users size={17} />, label: 'Teams'  },
         { to: '/agents', icon: <Bot   size={17} />, label: 'Agents' },
+        { to: '/tickets', icon: <Ticket size={17} />, label: 'Tickets'   },
       ]
     }] : []),
     ...(user?.role === UserRole.ADMIN ? [{

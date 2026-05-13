@@ -8,11 +8,33 @@ from schemas.schemas import (
 )
 from controllers.ticket_controller import TicketController
 from services.ticket_service import TicketService
+from services.routing_service import RoutingService
+from schemas.schemas import RoutingResult
 from models.base import MongoModel
 import os
-from core.config import settings
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+@router.post("/{id}/auto-route", response_model=RoutingResult)
+async def auto_route_ticket(
+    id: str,
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT])),
+    db=Depends(get_database)
+):
+    """Triggers the intelligent AI routing for a specific ticket."""
+    service = RoutingService(db)
+    try:
+        result = await service.auto_route_ticket(id)
+        return result
+    except ValueError as e:
+        logger.error(f"Routing error: {e}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error during routing: {e}")
+        raise HTTPException(status_code=500, detail="Internal AI routing error")
 
 
 @router.post("/create", response_model=TicketOut)

@@ -183,3 +183,149 @@ AttributeError: module 'bcrypt' has no attribute '__about__'
 2026-05-08 11:38:56,909 - root - INFO - MongoDB connection closed!
 2026-05-08 11:44:52,001 - root - INFO - Connecting to MongoDB...
 2026-05-08 11:44:52,009 - root - INFO - Connected to MongoDB!
+2026-05-11 22:18:50,315 - root - INFO - Connecting to MongoDB...
+2026-05-11 22:18:50,787 - root - INFO - Connected to MongoDB!
+2026-05-11 22:47:59,408 - services.email_service - WARNING - SMTP not configured. Skipping email to bwalid819@gmail.com. Content:
+<p>Your ticket <b>#8FFFF4</b> has been received and is currently in status: <b>OPEN</b>.</p>
+2026-05-11 22:48:43,690 - services.email_service - WARNING - SMTP not configured. Skipping email to bwalid819@gmail.com. Content:
+<p>Your ticket <b>#8FFFF5</b> has been received and is currently in status: <b>OPEN</b>.</p>
+2026-05-11 22:49:13,999 - services.email_service - WARNING - SMTP not configured. Skipping email to bwalid819@gmail.com. Content:
+<p>Your ticket <b>#8FFFF6</b> has been received and is currently in status: <b>OPEN</b>.</p>
+2026-05-11 22:49:40,729 - services.email_service - WARNING - SMTP not configured. Skipping email to bwalid819@gmail.com. Content:
+<p>Your ticket <b>#8FFFF7</b> has been received and is currently in status: <b>OPEN</b>.</p>
+2026-05-11 23:28:05,964 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:28:05,967 - root - INFO - MongoDB connection closed!
+2026-05-11 23:28:08,021 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:28:08,035 - root - INFO - Connected to MongoDB!
+2026-05-11 23:28:34,157 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:28:34,157 - root - INFO - MongoDB connection closed!
+2026-05-11 23:28:35,367 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:28:35,375 - root - INFO - Connected to MongoDB!
+2026-05-11 23:28:39,855 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:28:39,855 - root - INFO - MongoDB connection closed!
+2026-05-11 23:33:14,491 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:33:14,498 - root - INFO - Connected to MongoDB!
+2026-05-11 23:34:43,785 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:37:16,644 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:37:16,646 - root - INFO - MongoDB connection closed!
+2026-05-11 23:37:18,291 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:37:18,308 - root - INFO - Connected to MongoDB!
+2026-05-11 23:37:24,853 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:37:24,853 - root - INFO - MongoDB connection closed!
+2026-05-11 23:37:26,023 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:37:26,029 - root - INFO - Connected to MongoDB!
+2026-05-11 23:37:29,853 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:37:29,854 - root - INFO - MongoDB connection closed!
+2026-05-11 23:37:31,062 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:37:31,071 - root - INFO - Connected to MongoDB!
+2026-05-11 23:37:35,662 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:37:35,662 - root - INFO - MongoDB connection closed!
+2026-05-11 23:37:36,918 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:37:36,925 - root - INFO - Connected to MongoDB!
+2026-05-11 23:37:37,278 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:37:37,281 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-11 23:37:42,072 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:37:42,072 - root - INFO - MongoDB connection closed!
+2026-05-11 23:37:43,302 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:37:43,310 - root - INFO - Connected to MongoDB!
+2026-05-11 23:37:43,624 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:37:43,626 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-11 23:39:25,317 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:39:25,317 - root - INFO - MongoDB connection closed!
+2026-05-11 23:39:26,546 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:39:26,554 - root - INFO - Connected to MongoDB!
+2026-05-11 23:39:26,866 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:39:26,868 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-11 23:39:30,383 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:39:30,383 - root - INFO - MongoDB connection closed!
+2026-05-11 23:39:31,658 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:39:31,666 - root - INFO - Connected to MongoDB!
+2026-05-11 23:39:31,988 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:39:31,990 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-11 23:39:35,698 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:39:35,698 - root - INFO - MongoDB connection closed!
+2026-05-11 23:39:36,950 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:39:36,958 - root - INFO - Connected to MongoDB!
+2026-05-11 23:39:37,277 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:39:37,279 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-11 23:40:11,275 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:40:11,275 - root - INFO - MongoDB connection closed!
+2026-05-11 23:40:13,620 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:40:13,628 - root - INFO - Connected to MongoDB!
+2026-05-11 23:40:13,952 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:40:13,955 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-11 23:43:48,441 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:43:48,445 - services.routing_service - INFO - AI Analysis success for ticket 6a0240ab65ce3a3db38ffff5. Keywords: ['slow boot', 'PC performance', 'application freezing', 'Windows troubleshooting', 'hardware diagnostics', 'system optimization']
+2026-05-11 23:48:39,765 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:48:39,768 - services.routing_service - INFO - AI Analysis success for ticket 6a0240c965ce3a3db38ffff6. Keywords: ['ERP', '500 Error', 'Application Error', 'Order Processing', 'Bug', 'Troubleshooting']
+2026-05-11 23:48:43,080 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:48:43,083 - services.routing_service - INFO - AI Analysis success for ticket 6a0240e465ce3a3db38ffff7. Keywords: ['phishing', 'security', 'email', 'credentials', 'authentication']
+2026-05-11 23:51:08,186 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:51:08,187 - root - INFO - MongoDB connection closed!
+2026-05-11 23:51:09,924 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:51:09,940 - root - INFO - Connected to MongoDB!
+2026-05-11 23:51:10,276 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:51:10,278 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-11 23:51:18,034 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:51:18,034 - root - INFO - MongoDB connection closed!
+2026-05-11 23:51:19,322 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:51:19,331 - root - INFO - Connected to MongoDB!
+2026-05-11 23:51:19,655 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:51:19,657 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-11 23:51:32,366 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:51:32,366 - root - INFO - MongoDB connection closed!
+2026-05-11 23:51:33,643 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:51:33,652 - root - INFO - Connected to MongoDB!
+2026-05-11 23:51:33,970 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:51:33,972 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-11 23:54:12,761 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:54:12,764 - services.routing_service - INFO - AI Analysis success for ticket 6a0240e465ce3a3db38ffff7. Keywords: ['phishing', 'security', 'credentials', 'email', 'malicious', 'authentication']
+2026-05-11 23:54:22,420 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:54:22,422 - services.routing_service - INFO - AI Analysis success for ticket 6a0240e465ce3a3db38ffff7. Keywords: ['phishing', 'security', 'credentials', 'email', 'fraud', 'authentication']
+2026-05-11 23:54:29,367 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:54:29,370 - services.routing_service - INFO - AI Analysis success for ticket 6a0240ab65ce3a3db38ffff5. Keywords: ['slow boot', 'application freeze', 'PC performance', 'hardware troubleshooting', 'Windows troubleshooting']
+2026-05-11 23:54:33,794 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:54:33,797 - services.routing_service - INFO - AI Analysis success for ticket 6a0240ab65ce3a3db38ffff5. Keywords: ['slow boot', 'application freezing', 'PC performance', 'startup issues', 'hardware diagnostics']
+2026-05-11 23:54:39,197 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:54:39,200 - services.routing_service - INFO - AI Analysis success for ticket 6a0240ab65ce3a3db38ffff5. Keywords: ['slow boot', 'application freeze', 'PC performance', 'hardware troubleshooting', 'Windows troubleshooting']
+2026-05-11 23:54:44,002 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:54:44,005 - services.routing_service - INFO - AI Analysis success for ticket 6a02407f65ce3a3db38ffff4. Keywords: ['VPN', 'connectivity', 'network', 'remote access', 'authentication', 'firewall']
+2026-05-11 23:54:54,395 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:54:54,398 - services.routing_service - INFO - AI Analysis success for ticket 6a0240c965ce3a3db38ffff6. Keywords: ['ERP', '500 Error', 'Application Error', 'Order Processing', 'Bug', 'System Error']
+2026-05-11 23:55:00,072 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:55:00,075 - services.routing_service - INFO - AI Analysis success for ticket 6a0240c965ce3a3db38ffff6. Keywords: ['ERP', '500 Error', 'Application Bug', 'Order Entry', 'Application Error']
+2026-05-11 23:56:40,321 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:56:40,321 - root - INFO - MongoDB connection closed!
+2026-05-11 23:56:41,892 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:56:41,899 - root - INFO - Connected to MongoDB!
+2026-05-11 23:56:42,221 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:56:42,224 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-11 23:57:36,158 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:57:36,158 - root - INFO - MongoDB connection closed!
+2026-05-11 23:57:37,892 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:57:37,899 - root - INFO - Connected to MongoDB!
+2026-05-11 23:57:38,225 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:57:38,227 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-11 23:57:58,740 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:57:58,742 - services.routing_service - INFO - AI Analysis success for ticket 6a0240e465ce3a3db38ffff7. Keywords: ['phishing', 'security', 'credentials', 'email', 'malicious link', 'identity theft']
+2026-05-11 23:58:04,156 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:58:04,159 - services.routing_service - INFO - AI Analysis success for ticket 6a0240c965ce3a3db38ffff6. Keywords: ['ERP', '500 Error', 'Application Error', 'Order Processing', 'Troubleshooting']
+2026-05-11 23:58:08,980 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-11 23:58:08,984 - services.routing_service - INFO - AI Analysis success for ticket 6a0240ab65ce3a3db38ffff5. Keywords: ['slow boot', 'application freezing', 'PC performance', 'hardware diagnostics', 'Windows troubleshooting']
+2026-05-11 23:59:52,491 - root - INFO - Closing MongoDB connection...
+2026-05-11 23:59:52,491 - root - INFO - MongoDB connection closed!
+2026-05-11 23:59:54,047 - root - INFO - Connecting to MongoDB...
+2026-05-11 23:59:54,054 - root - INFO - Connected to MongoDB!
+2026-05-11 23:59:54,373 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-11 23:59:54,377 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-05-11 23:59:54,379 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-12 00:08:33,015 - root - INFO - Closing MongoDB connection...
+2026-05-12 00:08:33,016 - root - INFO - MongoDB connection closed!
+2026-05-12 00:09:29,484 - root - INFO - Connecting to MongoDB...
+2026-05-12 00:09:29,493 - root - INFO - Connected to MongoDB!
+2026-05-12 00:09:29,815 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-05-12 00:09:29,818 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-05-12 00:09:29,820 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-05-12 00:14:29,495 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-12 00:14:32,179 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-05-12 00:14:34,052 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"

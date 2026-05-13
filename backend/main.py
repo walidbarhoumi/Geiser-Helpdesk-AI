@@ -42,6 +42,15 @@ async def startup_db_client():
     if not os.path.exists(settings.UPLOAD_DIR):
         os.makedirs(settings.UPLOAD_DIR)
     await connect_to_mongo()
+    
+    # Check AI Engine
+    from ai.ollama_client import OllamaClient
+    ai_client = OllamaClient()
+    ai_status = await ai_client.check_health()
+    if ai_status["status"] == "healthy":
+        logger.info(f"AI Engine started: Model '{settings.OLLAMA_MODEL}' is ready.")
+    else:
+        logger.warning(f"AI Engine warning: {ai_status.get('status')} - {ai_status.get('error', 'Model not found')}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

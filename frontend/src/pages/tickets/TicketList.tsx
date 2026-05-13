@@ -4,9 +4,9 @@ import {
   Search, Plus, ChevronLeft, ChevronRight, Download,
   Zap, AlertTriangle, TrendingUp, Clock, Activity,
   Target, Shield, Award, RefreshCw, Cpu, Trash2,
-  ArrowUpRight, CheckCircle2, Circle, XCircle, AlertCircle
+  ArrowUpRight, CheckCircle2, Circle, XCircle, AlertCircle, Bot, Sparkles, Loader2
 } from 'lucide-react';
-import { type Ticket, TicketStatus, TicketPriority, UserRole } from '../../types';
+import { type Ticket, type RoutingResult, TicketStatus, TicketPriority, UserRole } from '../../types';
 import api from '../../api/axios';
 import { useAuth } from '../../store/authContext';
 import { format } from 'date-fns';
@@ -23,6 +23,7 @@ const injectStyles = () => {
     @keyframes tl-shimmer { 0%{background-position:-700px 0} 100%{background-position:700px 0} }
     @keyframes tl-in { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
     @keyframes tl-spin { to{transform:rotate(360deg)} }
+    @keyframes tl-toast { from{transform:translateX(100%); opacity:0} to{transform:translateX(0); opacity:1} }
     .tl-row { transition:background .18s ease; cursor:pointer; }
     .tl-row:hover { background:rgba(139,92,246,.065) !important; }
     .tl-kpi { transition:transform .3s,box-shadow .3s; }
@@ -42,13 +43,16 @@ const injectStyles = () => {
     .tl-action-btn { transition:all .2s; }
     .tl-action-btn:hover { background:rgba(139,92,246,.15) !important; color:#c4b5fd !important; }
     .tl-del-btn:hover { background:rgba(239,68,68,.15) !important; color:#f87171 !important; }
+    .tl-auto-btn { background:linear-gradient(135deg,rgba(139,92,246,.2) 0%,rgba(236,72,153,.2) 100%) !important; border:1px solid rgba(139,92,246,.3) !important; color:#c4b5fd !important; }
+    .tl-auto-btn:hover { background:linear-gradient(135deg,rgba(139,92,246,.3) 0%,rgba(236,72,153,.3) 100%) !important; transform:translateY(-1px); }
+    .tl-auto-btn:disabled { opacity:.5; cursor:not-allowed; }
   `;
   document.head.appendChild(s);
 };
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 const priorityConfig: Record<string, { color: string; glow: string; label: string }> = {
-  CRITICAL: { color: '#f87171', glow: 'rgba(239,68,68,.35)', label: 'Critical' },
+  URGENT:   { color: '#f87171', glow: 'rgba(239,68,68,.35)', label: 'Urgent' },
   HIGH:     { color: '#fb923c', glow: 'rgba(251,146,60,.3)', label: 'High' },
   MEDIUM:   { color: '#60a5fa', glow: 'rgba(96,165,250,.3)', label: 'Medium' },
   LOW:      { color: '#34d399', glow: 'rgba(52,211,153,.25)', label: 'Low' },
@@ -66,7 +70,7 @@ const PriorityDot: React.FC<{ priority: string }> = ({ priority }) => {
   const cfg = priorityConfig[priority] ?? priorityConfig.MEDIUM;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem' }}>
-      <div style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.color, boxShadow: `0 0 6px ${cfg.glow}`, animation: priority === 'CRITICAL' ? 'tl-pulse 1.5s infinite' : 'none', flexShrink: 0 }} />
+      <div style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.color, boxShadow: `0 0 6px ${cfg.glow}`, animation: priority === 'URGENT' ? 'tl-pulse 1.5s infinite' : 'none', flexShrink: 0 }} />
       <span style={{ fontSize: '.75rem', fontWeight: 700, color: cfg.color }}>{cfg.label}</span>
     </div>
   );
@@ -77,6 +81,15 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.3rem', padding: '.28rem .7rem', borderRadius: 999, background: cfg.bg, border: `1px solid ${cfg.color}30`, fontSize: '.7rem', fontWeight: 700, color: cfg.color, whiteSpace: 'nowrap' }}>
       {cfg.icon} {cfg.label}
+    </span>
+  );
+};
+
+const MatchBadge: React.FC<{ quality: string }> = ({ quality }) => {
+  const color = quality === 'Excellent Match' ? '#34d399' : quality === 'Good Match' ? '#60a5fa' : '#fb923c';
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', padding: '.15rem .45rem', borderRadius: 6, background: `${color}15`, border: `1px solid ${color}30`, fontSize: '.6rem', fontWeight: 700, color }}>
+      <Sparkles size={8} /> {quality}
     </span>
   );
 };
@@ -113,12 +126,20 @@ const SkeletonRow: React.FC<{ i: number }> = ({ i }) => (
 const TicketList: React.FC = () => {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [routingIds, setRoutingIds] = useState<Set<string>>(new Set());
+  const [toasts, setToasts] = useState<any[]>([]);
   const [filter, setFilter] = useState({ status: '', priority: '', search: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const { user } = useAuth();
   const ticketsPerPage = 10;
 
   useEffect(() => { injectStyles(); }, []);
+
+  const addToast = (t: any) => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { ...t, id }]);
+    setTimeout(() => setToasts(prev => prev.filter(x => x.id !== id)), 5000);
+  };
 
   const fetchTickets = async () => {
     setLoading(true);
@@ -127,6 +148,35 @@ const TicketList: React.FC = () => {
   };
 
   useEffect(() => { fetchTickets(); }, []);
+
+  const handleAutoRoute = async (ticketId: string) => {
+    setRoutingIds(prev => new Set(prev).add(ticketId));
+    try {
+      const response = await api.post<RoutingResult>(`/tickets/${ticketId}/auto-route`);
+      const result = response.data;
+      
+      addToast({
+        title: 'Auto Route Success',
+        message: `Assigned to ${result.agent_name} (${result.team_name}). Score: ${result.confidence_score}%`,
+        quality: result.match_quality,
+        type: 'success'
+      });
+      
+      fetchTickets();
+    } catch (err: any) {
+      addToast({
+        title: 'Routing Failed',
+        message: err.response?.data?.detail || 'An error occurred during AI routing.',
+        type: 'error'
+      });
+    } finally {
+      setRoutingIds(prev => {
+        const next = new Set(prev);
+        next.delete(ticketId);
+        return next;
+      });
+    }
+  };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this ticket?')) return;
@@ -137,14 +187,14 @@ const TicketList: React.FC = () => {
   const filtered = tickets.filter(t =>
     (filter.status === '' || t.status === filter.status) &&
     (filter.priority === '' || t.priority === filter.priority) &&
-    (filter.search === '' || t.subject.toLowerCase().includes(filter.search.toLowerCase()) || t.id?.toLowerCase().includes(filter.search.toLowerCase()))
+    (filter.search === '' || t.subject.toLowerCase().includes(filter.search.toLowerCase()) || (t.id && t.id.toLowerCase().includes(filter.search.toLowerCase())))
   );
 
   const totalPages = Math.ceil(filtered.length / ticketsPerPage);
   const paginated = filtered.slice((currentPage - 1) * ticketsPerPage, currentPage * ticketsPerPage);
 
   const openCount = tickets.filter(t => t.status === 'OPEN').length;
-  const criticalCount = tickets.filter(t => t.priority === 'CRITICAL').length;
+  const criticalCount = tickets.filter(t => t.priority === 'URGENT' || t.priority === 'HIGH').length;
   const resolvedToday = tickets.filter(t => t.status === 'RESOLVED').length;
 
   const insights = [
@@ -164,7 +214,25 @@ const TicketList: React.FC = () => {
   ];
 
   return (
-    <div style={{ fontFamily: "'DM Sans',sans-serif", display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+    <div style={{ fontFamily: "'DM Sans',sans-serif", display: 'flex', flexDirection: 'column', gap: '2rem', position: 'relative' }}>
+      
+      {/* Toast Container */}
+      <div style={{ position: 'fixed', top: 24, right: 24, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '1rem', pointerEvents: 'none' }}>
+        {toasts.map(t => (
+          <div key={t.id} style={{ pointerEvents: 'auto', animation: 'tl-toast .3s ease both', background: 'rgba(15,15,25,.9)', border: `1px solid ${t.type === 'error' ? '#ef444450' : 'rgba(139,92,246,.3)'}`, backdropFilter: 'blur(16px)', borderRadius: 16, padding: '1rem', minWidth: 300, boxShadow: '0 20px 40px rgba(0,0,0,.4)', display: 'flex', gap: '.875rem' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: t.type === 'error' ? '#ef444415' : 'rgba(139,92,246,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.type === 'error' ? '#ef4444' : '#8b5cf6', flexShrink: 0 }}>
+              {t.type === 'error' ? <XCircle size={20} /> : <Sparkles size={20} />}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.25rem' }}>
+                <h4 style={{ margin: 0, fontSize: '.875rem', fontWeight: 700, color: '#f1f5f9' }}>{t.title}</h4>
+                {t.quality && <MatchBadge quality={t.quality} />}
+              </div>
+              <p style={{ margin: 0, fontSize: '.75rem', color: 'rgba(255,255,255,.5)', lineHeight: 1.4 }}>{t.message}</p>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* ── HERO ─────────────────────────────────────────────── */}
       <div style={{ position: 'relative', borderRadius: 24, overflow: 'hidden', background: 'linear-gradient(135deg,rgba(10,10,20,.96) 0%,rgba(22,10,42,.96) 50%,rgba(10,10,20,.96) 100%)', border: '1px solid rgba(139,92,246,.2)', padding: '2.5rem' }}>
@@ -192,7 +260,6 @@ const TicketList: React.FC = () => {
               </button>
             </div>
           </div>
-          {/* Insight widgets */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '.6rem', minWidth: 250 }}>
             {insights.map((w, i) => (
               <div key={i} className="tl-insight" style={{ display: 'flex', alignItems: 'center', gap: '.6rem', padding: '.6rem .875rem', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 11, backdropFilter: 'blur(12px)' }}>
@@ -216,15 +283,13 @@ const TicketList: React.FC = () => {
           <Search size={14} style={{ color: 'rgba(255,255,255,.3)', flexShrink: 0 }} />
           <input placeholder="AI semantic search…" value={filter.search} onChange={e => setFilter({ ...filter, search: e.target.value })} style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: '.875rem', color: 'rgba(255,255,255,.7)', width: '100%', fontFamily: "'DM Sans',sans-serif" }} />
         </div>
-        {/* Status pills */}
         <div style={{ display: 'flex', gap: '.35rem', flexWrap: 'wrap' }}>
           {['', ...Object.values(TicketStatus)].map(s => (
             <button key={s} className={`tl-filter-btn${filter.status === s ? ' active' : ''}`} onClick={() => setFilter({ ...filter, status: s })} style={{ padding: '.45rem .8rem', borderRadius: 8, fontSize: '.72rem', fontWeight: 700, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', color: 'rgba(255,255,255,.4)', cursor: 'pointer', textTransform: s ? 'capitalize' : undefined }}>
-              {s ? s.replace('_', ' ') : 'All'}
+              {s ? s.replace('_', ' ') : 'All Status'}
             </button>
           ))}
         </div>
-        {/* Priority pills */}
         <div style={{ display: 'flex', gap: '.35rem' }}>
           {['', ...Object.values(TicketPriority)].map(p => (
             <button key={p} className={`tl-filter-btn${filter.priority === p ? ' active' : ''}`} onClick={() => setFilter({ ...filter, priority: p })} style={{ padding: '.45rem .8rem', borderRadius: 8, fontSize: '.72rem', fontWeight: 700, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', color: p ? (priorityConfig[p]?.color ?? 'rgba(255,255,255,.4)') : 'rgba(255,255,255,.4)', cursor: 'pointer' }}>
@@ -273,10 +338,7 @@ const TicketList: React.FC = () => {
                       <span style={{ fontFamily: 'monospace', fontSize: '.72rem', fontWeight: 700, color: 'rgba(139,92,246,.7)' }}>#{ticket.id ? ticket.id.slice(-6).toUpperCase() : 'N/A'}</span>
                     </td>
                     <td style={{ padding: '.9rem 1.25rem', maxWidth: 280 }}>
-                      <Link to={`/tickets/${ticket.id}`} style={{ display: 'block', fontWeight: 600, color: 'rgba(255,255,255,.8)', fontSize: '.875rem', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', transition: 'color .15s' }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#c4b5fd'}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,.8)'}
-                      >{ticket.subject}</Link>
+                      <Link to={`/tickets/${ticket.id}`} style={{ display: 'block', fontWeight: 600, color: 'rgba(255,255,255,.8)', fontSize: '.875rem', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', transition: 'color .15s' }}>{ticket.subject}</Link>
                       <span style={{ fontSize: '.7rem', color: 'rgba(255,255,255,.3)', marginTop: '.15rem', display: 'block' }}>{ticket.category} · {ticket.channel}</span>
                     </td>
                     <td style={{ padding: '.9rem 1.25rem' }}><StatusBadge status={ticket.status} /></td>
@@ -286,11 +348,22 @@ const TicketList: React.FC = () => {
                     </td>
                     <td style={{ padding: '.9rem 1.25rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem' }}>
+                        {user?.role !== UserRole.USER && (ticket.status === 'OPEN' || ticket.status === 'IN_PROGRESS') && (
+                          <button 
+                            className="tl-action-btn tl-auto-btn" 
+                            onClick={(e) => { e.stopPropagation(); handleAutoRoute(ticket.id); }}
+                            disabled={routingIds.has(ticket.id)}
+                            style={{ padding: '.35rem .75rem', borderRadius: 8, fontSize: '.75rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '.3rem', cursor: 'pointer' }}
+                          >
+                            {routingIds.has(ticket.id) ? <Loader2 size={12} className="animate-spin" style={{ animation: 'tl-spin 1s linear infinite' }} /> : <Bot size={12} />}
+                            Auto Route
+                          </button>
+                        )}
                         <Link to={`/tickets/${ticket.id}`} className="tl-action-btn" style={{ padding: '.35rem .75rem', borderRadius: 8, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', color: 'rgba(255,255,255,.45)', fontSize: '.75rem', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '.3rem', transition: 'all .2s' }}>
                           <ArrowUpRight size={12} /> View
                         </Link>
                         {user?.role === UserRole.ADMIN && (
-                          <button className="tl-action-btn tl-del-btn" onClick={() => handleDelete(ticket.id)} style={{ padding: '.35rem', borderRadius: 8, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', color: 'rgba(255,255,255,.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'all .2s' }}>
+                          <button className="tl-action-btn tl-del-btn" onClick={(e) => { e.stopPropagation(); handleDelete(ticket.id); }} style={{ padding: '.35rem', borderRadius: 8, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', color: 'rgba(255,255,255,.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'all .2s' }}>
                             <Trash2 size={12} />
                           </button>
                         )}
@@ -302,7 +375,6 @@ const TicketList: React.FC = () => {
             </tbody>
           </table>
         </div>
-        {/* Pagination */}
         <div style={{ padding: '.875rem 1.25rem', borderTop: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: '.78rem', color: 'rgba(255,255,255,.3)' }}>
             Showing <strong style={{ color: 'rgba(255,255,255,.6)' }}>{Math.min((currentPage - 1) * ticketsPerPage + 1, filtered.length)}</strong>–<strong style={{ color: 'rgba(255,255,255,.6)' }}>{Math.min(currentPage * ticketsPerPage, filtered.length)}</strong> of <strong style={{ color: 'rgba(255,255,255,.6)' }}>{filtered.length}</strong>
