@@ -135,11 +135,14 @@ class SLAService:
         for ticket in tickets:
             stats["scanned"] += 1
             ticket_id = str(ticket["_id"])
-            old_status = ticket.get("sla_status", SLAStatus.ON_TRACK)
+            old_status = ticket.get("sla_status", SLAStatus.ON_TRACK.value)
+            if hasattr(old_status, "value"):
+                old_status = old_status.value
             new_status = await self.compute_sla_status(ticket)
+            new_status_val = new_status.value if hasattr(new_status, "value") else new_status
 
-            update_fields: Dict = {"sla_status": new_status}
-            if new_status == SLAStatus.BREACHED and old_status != SLAStatus.BREACHED:
+            update_fields: Dict = {"sla_status": new_status_val}
+            if new_status_val == SLAStatus.BREACHED.value and old_status != SLAStatus.BREACHED.value:
                 update_fields["sla_breached_at"] = now
 
             # Persist updated SLA status
@@ -148,13 +151,13 @@ class SLAService:
                 {"$set": update_fields}
             )
 
-            if new_status == SLAStatus.AT_RISK:
+            if new_status_val == SLAStatus.AT_RISK.value:
                 stats["at_risk"] += 1
-            elif new_status == SLAStatus.BREACHED:
+            elif new_status_val == SLAStatus.BREACHED.value:
                 stats["breached"] += 1
 
             # Fire alert only if status changed to AT_RISK or BREACHED
-            if new_status in (SLAStatus.AT_RISK, SLAStatus.BREACHED) and new_status != old_status:
+            if new_status_val in (SLAStatus.AT_RISK.value, SLAStatus.BREACHED.value) and new_status_val != old_status:
                 await self._fire_alert(ticket, new_status, now)
                 stats["alerted"] += 1
 
@@ -233,6 +236,34 @@ class SLAService:
         """Return most recent SLA alerts for the dashboard."""
         alerts = await self.sla_alerts.find().sort("created_at", -1).limit(limit).to_list(limit)
         return [MongoModel.format_id(a) for a in alerts]
+
+    async def get_at_risk_tickets(self, limit: int = 100) -> List[Dict]:
+        """Return active tickets with AT_RISK or BREACHED SLA status."""
+        active_statuses = [TicketStatus.OPEN.value, TicketStatus.IN_PROGRESS.value]
+        tickets = await self.tickets.find({
+            "status": {"$in": active_statuses},
+            "sla_status": {"$in": [SLAStatus.AT_RISK.value, SLAStatus.BREACHED.value]},
+        }).sort("sla_deadline", 1).limit(limit).to_list(limit)
+
+        now = datetime.utcnow()
+        result = []
+        for ticket in tickets:
+            formatted = MongoModel.format_id(ticket)
+            deadline = ticket.get("sla_deadline")
+            remaining_min = None
+            if deadline:
+                remaining_min = max(0, int((deadline - now).total_seconds() / 60))
+            result.append({
+                "ticket_id": formatted["id"],
+                "subject": ticket.get("subject", ""),
+                "priority": ticket.get("priority"),
+                "sla_status": ticket.get("sla_status"),
+                "sla_deadline": deadline,
+                "time_remaining_minutes": remaining_min,
+                "assigned_agent_id": ticket.get("assigned_agent_id"),
+                "created_at": ticket.get("created_at", now),
+            })
+        return result
 
     async def get_ticket_sla_detail(self, ticket_id: str) -> Optional[Dict]:
         """Get full SLA details for a specific ticket."""

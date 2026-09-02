@@ -28,6 +28,33 @@ export const TicketChannel = {
 } as const;
 export type TicketChannel = typeof TicketChannel[keyof typeof TicketChannel];
 
+export const SLAStatus = {
+  ON_TRACK: "ON_TRACK",
+  AT_RISK: "AT_RISK",
+  BREACHED: "BREACHED",
+} as const;
+export type SLAStatus = typeof SLAStatus[keyof typeof SLAStatus];
+
+export type SLAPolicy = {
+  priority: TicketPriority;
+  response_time_hours: number;
+  resolution_time_hours: number;
+  at_risk_threshold_pct: number;
+};
+
+export type SLATicketDetail = {
+  ticket_id: string;
+  subject?: string;
+  priority: TicketPriority;
+  sla_status: SLAStatus;
+  sla_deadline?: string;
+  sla_response_deadline?: string;
+  sla_breached_at?: string;
+  time_remaining_minutes?: number;
+  pct_consumed?: number;
+  policy?: SLAPolicy;
+};
+
 export type User = {
   id: string;
   email: string;
@@ -51,6 +78,10 @@ export type Ticket = {
   routing_reason?: string;
   attachments: string[];
   keywords?: string[];
+  sla_deadline?: string;
+  sla_status?: SLAStatus;
+  sla_breached_at?: string;
+  sla_response_deadline?: string;
   created_at: string;
   updated_at: string;
 };

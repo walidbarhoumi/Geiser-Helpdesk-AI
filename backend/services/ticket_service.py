@@ -40,6 +40,15 @@ class TicketService:
         else:
             ticket_dict["assigned_agent_id"] = None
 
+        # Compute SLA deadlines from priority
+        sla_service = SLAService(self.db)
+        created_at = ticket_dict["created_at"]
+        priority = ticket_dict["priority"]
+        ticket_dict["sla_deadline"] = await sla_service.compute_sla_deadline(priority, created_at)
+        ticket_dict["sla_response_deadline"] = await sla_service.compute_sla_response_deadline(priority, created_at)
+        ticket_dict["sla_status"] = SLAStatus.ON_TRACK.value
+        ticket_dict["sla_breached_at"] = None
+
         result = await self.tickets.insert_one(ticket_dict)
         ticket_dict["_id"] = result.inserted_id
         formatted_ticket = MongoModel.format_id(ticket_dict)
@@ -85,10 +94,18 @@ class TicketService:
         oid = MongoModel.to_object_id(ticket_id)
         if not oid:
             return None
-        await self.tickets.update_one(
-            {"_id": oid},
-            {"$set": {"status": new_status.value, "updated_at": datetime.utcnow()}}
-        )
+
+        ticket = await self.tickets.find_one({"_id": oid})
+        update_fields: dict = {"status": new_status.value, "updated_at": datetime.utcnow()}
+
+        if ticket and new_status not in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+            sla_service = SLAService(self.db)
+            new_sla_status = await sla_service.compute_sla_status(ticket)
+            update_fields["sla_status"] = new_sla_status.value if hasattr(new_sla_status, "value") else new_sla_status
+            if new_sla_status == SLAStatus.BREACHED and ticket.get("sla_status") != SLAStatus.BREACHED.value:
+                update_fields["sla_breached_at"] = datetime.utcnow()
+
+        await self.tickets.update_one({"_id": oid}, {"$set": update_fields})
         updated_ticket = await self.get_ticket(ticket_id)
         
         if updated_ticket:

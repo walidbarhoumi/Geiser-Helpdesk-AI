@@ -277,10 +277,31 @@ class SLAAlertOut(BaseModel):
     subject: str
     priority: TicketPriority
     sla_status: SLAStatus
-    sla_deadline: datetime
-    time_remaining_minutes: int
+    sla_deadline: Optional[datetime] = None
+    time_remaining_minutes: Optional[int] = None
     assigned_agent_id: Optional[str] = None
     created_at: datetime
+
+
+class SLATicketDetailOut(BaseModel):
+    """Full SLA detail for a specific ticket."""
+    ticket_id: str
+    subject: Optional[str] = None
+    priority: TicketPriority
+    sla_status: SLAStatus
+    sla_deadline: Optional[datetime] = None
+    sla_response_deadline: Optional[datetime] = None
+    sla_breached_at: Optional[datetime] = None
+    time_remaining_minutes: Optional[int] = None
+    pct_consumed: Optional[float] = None
+    policy: Optional[dict] = None
+
+
+class SLAScanResult(BaseModel):
+    scanned: int
+    at_risk: int
+    breached: int
+    alerted: int
 
 
 class RoutingResult(BaseModel):

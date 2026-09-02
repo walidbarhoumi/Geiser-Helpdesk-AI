@@ -10,6 +10,8 @@ import { type Ticket, type RoutingResult, UserRole } from '../../types';
 import api from '../../api/axios';
 import { useAuth } from '../../store/authContext';
 import { format } from 'date-fns';
+import SLABadge from '../../components/sla/SLABadge';
+import { type SLATicketDetail } from '../../types';
 
 
 /* ─── Styles ──────────────────────────────────────────────── */
@@ -117,13 +119,18 @@ const TicketDetails: React.FC = () => {
   
   const [isRouting, setIsRouting] = useState(false);
   const [routingResult, setRoutingResult] = useState<RoutingResult | null>(null);
+  const [slaDetail, setSlaDetail] = useState<SLATicketDetail | null>(null);
 
   useEffect(() => { injectStyles(); }, []);
 
   const fetchTicket = async () => {
     try {
-      const res = await api.get(`/tickets/${id}`);
-      setTicket(res.data);
+      const [ticketRes, slaRes] = await Promise.all([
+        api.get(`/tickets/${id}`),
+        api.get<SLATicketDetail>(`/sla/tickets/${id}/status`).catch(() => null),
+      ]);
+      setTicket(ticketRes.data);
+      if (slaRes) setSlaDetail(slaRes.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -219,8 +226,42 @@ const TicketDetails: React.FC = () => {
           <div style={{ padding: '.4rem .875rem', borderRadius: 8, background: stat.bg, border: `1px solid ${stat.color}30`, color: stat.color, fontSize: '.75rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '.4rem' }}>
             {stat.icon} {stat.label}
           </div>
+          <SLABadge status={ticket.sla_status} deadline={ticket.sla_deadline} />
         </div>
       </div>
+
+      {/* SLA Timeline Bar */}
+      {slaDetail && ticket.status !== 'RESOLVED' && ticket.status !== 'CLOSED' && (
+        <div className="td-glass" style={{ borderRadius: 16, padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '.72rem', fontWeight: 700, color: 'rgba(255,255,255,.35)', textTransform: 'uppercase', letterSpacing: '.06em' }}>SLA Timeline</span>
+            <span style={{ fontSize: '.75rem', color: 'rgba(255,255,255,.4)' }}>
+              {slaDetail.pct_consumed !== undefined ? `${slaDetail.pct_consumed}% consommé` : ''}
+              {slaDetail.time_remaining_minutes !== undefined && slaDetail.time_remaining_minutes > 0
+                ? ` · ${Math.floor(slaDetail.time_remaining_minutes / 60)}h ${slaDetail.time_remaining_minutes % 60}m restantes`
+                : slaDetail.sla_status === 'BREACHED' ? ' · Délai dépassé' : ''}
+            </span>
+          </div>
+          <div style={{ height: 8, background: 'rgba(255,255,255,.06)', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${Math.min(100, slaDetail.pct_consumed ?? 0)}%`,
+              borderRadius: 999,
+              background: slaDetail.sla_status === 'BREACHED'
+                ? 'linear-gradient(90deg,#ef4444,#f87171)'
+                : slaDetail.sla_status === 'AT_RISK'
+                  ? 'linear-gradient(90deg,#d97706,#fb923c)'
+                  : 'linear-gradient(90deg,#059669,#34d399)',
+              transition: 'width .5s ease',
+            }} />
+          </div>
+          {ticket.sla_deadline && (
+            <div style={{ fontSize: '.72rem', color: 'rgba(255,255,255,.3)' }}>
+              Échéance : {format(new Date(ticket.sla_deadline), 'dd/MM/yyyy HH:mm')}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '2rem', alignItems: 'start' }}>
         
@@ -445,9 +486,13 @@ const TicketDetails: React.FC = () => {
             </div>
             
             {ticket.assigned_agent_id && (
-               <div style={{ padding: '.75rem', borderRadius: 12, background: 'rgba(52,211,153,.05)', border: '1px solid rgba(52,211,153,.15)', display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-                 <CheckCircle2 size={14} style={{ color: '#34d399' }} />
-                 <span style={{ fontSize: '.75rem', color: '#34d399', fontWeight: 600 }}>SLA Active: 2h left</span>
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
+                 <SLABadge status={ticket.sla_status} deadline={ticket.sla_deadline} />
+                 {ticket.sla_deadline && (
+                   <span style={{ fontSize: '.7rem', color: 'rgba(255,255,255,.3)' }}>
+                     Échéance : {format(new Date(ticket.sla_deadline), 'dd/MM HH:mm')}
+                   </span>
+                 )}
                </div>
             )}
           </div>

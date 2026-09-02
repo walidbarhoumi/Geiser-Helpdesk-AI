@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Ticket, Users, Bot, Shield,
   LogOut, ChevronRight, Bell, Search, Settings,
-  Activity, Command, Sparkles
+  Activity, Command, Sparkles, Timer
 } from 'lucide-react';
 
 
@@ -27,6 +27,7 @@ import TeamList from './pages/teams/TeamList';
 import TeamCreate from './pages/teams/TeamCreate';
 import UserList from './pages/users/UserList';
 import Profile from './pages/profile/Profile';
+import SLADashboard from './pages/sla/SLADashboard';
 
 import { UserRole } from './types';
 import { SupportChatbot } from './components/chat/SupportChatbot';
@@ -255,6 +256,7 @@ const Sidebar: React.FC = () => {
         { to: '/teams',  icon: <Users size={17} />, label: 'Teams'  },
         { to: '/agents', icon: <Bot   size={17} />, label: 'Agents' },
         { to: '/tickets', icon: <Ticket size={17} />, label: 'Tickets'   },
+        { to: '/sla',    icon: <Timer size={17} />, label: 'SLA Monitor' },
       ]
     }] : []),
     ...(user?.role === UserRole.ADMIN ? [{
@@ -469,6 +471,7 @@ const Navbar: React.FC = () => {
     '/teams/create': 'Create Team',
     '/users': 'Users',
     '/profile': 'Profile',
+    '/sla': 'SLA Monitor',
   };
 
   const currentPage = crumbMap[location.pathname] || 'Workspace';
@@ -697,6 +700,7 @@ const App: React.FC = () => {
             <Route path="/tickets"        element={<TicketList />} />
             <Route path="/tickets/create" element={<TicketCreate />} />
             <Route path="/tickets/:id"    element={<TicketDetails />} />
+            <Route path="/sla"            element={<SLADashboard />} />
             <Route path="/profile"        element={<Profile />} />
 
             <Route path="/users" element={

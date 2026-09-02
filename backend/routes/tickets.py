@@ -11,8 +11,10 @@ from services.ticket_service import TicketService
 from services.routing_service import RoutingService
 from schemas.schemas import RoutingResult
 from models.base import MongoModel
+from core.config import settings
 import os
 import logging
+from datetime import datetime
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -135,7 +137,16 @@ async def update_ticket(
         if hasattr(val, "value"):
             update_data[key] = val.value
 
-    from datetime import datetime
+    # Recompute SLA deadlines when priority changes
+    if "priority" in update_data:
+        from services.sla_service import SLAService
+        sla_service = SLAService(db)
+        created_at = ticket.get("created_at") or datetime.utcnow()
+        update_data["sla_deadline"] = await sla_service.compute_sla_deadline(update_data["priority"], created_at)
+        update_data["sla_response_deadline"] = await sla_service.compute_sla_response_deadline(update_data["priority"], created_at)
+        new_sla_status = await sla_service.compute_sla_status({**ticket, **update_data})
+        update_data["sla_status"] = new_sla_status.value if hasattr(new_sla_status, "value") else new_sla_status
+
     update_data["updated_at"] = datetime.utcnow()
     await db.tickets.update_one({"_id": MongoModel.to_object_id(id)}, {"$set": update_data})
     return await service.get_ticket(id)

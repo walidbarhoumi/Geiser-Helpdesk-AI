@@ -11,6 +11,7 @@ import { type Ticket, type RoutingResult, TicketStatus, TicketPriority, UserRole
 import api from '../../api/axios';
 import { useAuth } from '../../store/authContext';
 import { format } from 'date-fns';
+import SLABadge from '../../components/sla/SLABadge';
 
 /* ─── Global styles ───────────────────────────────────────── */
 const injectStyles = () => {
@@ -197,9 +198,13 @@ const TicketList: React.FC = () => {
   const openCount = tickets.filter(t => t.status === 'OPEN').length;
   const criticalCount = tickets.filter(t => t.priority === 'URGENT' || t.priority === 'HIGH').length;
   const resolvedToday = tickets.filter(t => t.status === 'RESOLVED').length;
+  const atRiskCount = tickets.filter(t => t.sla_status === 'AT_RISK').length;
+  const breachedCount = tickets.filter(t => t.sla_status === 'BREACHED').length;
+  const onTrackCount = tickets.filter(t => !t.sla_status || t.sla_status === 'ON_TRACK').length;
+  const slaCompliance = tickets.length > 0 ? Math.round(onTrackCount / tickets.length * 100) : 100;
 
   const insights = [
-    { icon: <AlertTriangle size={13} />, text: `${criticalCount} high-risk SLA tickets`, color: '#f87171' },
+    { icon: <AlertTriangle size={13} />, text: `${atRiskCount + breachedCount} ticket(s) SLA à risque`, color: '#f87171' },
     { icon: <TrendingUp size={13} />, text: 'Response efficiency +14%', color: '#34d399' },
     { icon: <Cpu size={13} />, text: '12 repetitive incidents detected', color: '#a78bfa' },
     { icon: <Clock size={13} />, text: 'Workload spike predicted at 3 PM', color: '#fb923c' },
@@ -211,7 +216,7 @@ const TicketList: React.FC = () => {
     { label: 'Critical', value: criticalCount, insight: criticalCount > 0 ? 'Immediate attention needed' : 'All clear', icon: <AlertTriangle size={17} />, color: '#f87171' },
     { label: 'Resolved Today', value: resolvedToday, insight: `${Math.round(resolvedToday / Math.max(tickets.length, 1) * 100)}% resolution rate`, icon: <CheckCircle2 size={17} />, color: '#34d399' },
     { label: 'Avg Resolution', value: '4.2h', insight: '18% faster than baseline', icon: <Clock size={17} />, color: '#fb923c' },
-    { label: 'SLA Compliance', value: '92%', insight: 'Above enterprise target', icon: <Award size={17} />, color: '#ec4899' },
+    { label: 'SLA Compliance', value: `${slaCompliance}%`, insight: breachedCount > 0 ? `${breachedCount} dépassé(s)` : 'Above enterprise target', icon: <Award size={17} />, color: '#ec4899' },
   ];
 
   return (
@@ -307,7 +312,7 @@ const TicketList: React.FC = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(255,255,255,.07)' }}>
-                {['ID', 'Subject & Category', 'Status', 'Priority', 'Created', 'Actions'].map((h, i) => (
+                {['ID', 'Subject & Category', 'Status', 'Priority', 'SLA', 'Created', 'Actions'].map((h, i) => (
                   <th key={i} style={{ padding: '.9rem 1.25rem', textAlign: 'left', fontSize: '.68rem', fontWeight: 700, letterSpacing: '.07em', color: 'rgba(255,255,255,.28)', textTransform: 'uppercase', background: 'rgba(255,255,255,.02)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -316,7 +321,7 @@ const TicketList: React.FC = () => {
               {loading ? (
                 Array.from({ length: 6 }, (_, i) => <SkeletonRow key={i} i={i} />)
               ) : paginated.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: '5rem 2rem', textAlign: 'center' }}>
+                <tr><td colSpan={7} style={{ padding: '5rem 2rem', textAlign: 'center' }}>
                   <div style={{ width: 60, height: 60, borderRadius: 18, margin: '0 auto 1.25rem', background: 'rgba(139,92,246,.08)', border: '1px solid rgba(139,92,246,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Zap size={24} style={{ color: 'rgba(139,92,246,.55)' }} />
                   </div>
@@ -344,6 +349,9 @@ const TicketList: React.FC = () => {
                     </td>
                     <td style={{ padding: '.9rem 1.25rem' }}><StatusBadge status={ticket.status} /></td>
                     <td style={{ padding: '.9rem 1.25rem' }}><PriorityDot priority={ticket.priority} /></td>
+                    <td style={{ padding: '.9rem 1.25rem' }}>
+                      <SLABadge status={ticket.sla_status} deadline={ticket.sla_deadline} />
+                    </td>
                     <td style={{ padding: '.9rem 1.25rem', whiteSpace: 'nowrap' }}>
                       <span style={{ fontSize: '.78rem', color: 'rgba(255,255,255,.35)' }}>{format(new Date(ticket.created_at), 'MMM dd, yyyy')}</span>
                     </td>

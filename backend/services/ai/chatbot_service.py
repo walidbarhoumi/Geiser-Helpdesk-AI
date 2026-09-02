@@ -271,6 +271,98 @@ RÈGLE DE VALIDATION :
             "summary": "Demande d'assistance soumise et analysée par l'IA GEISER 24/7."
         }
 
+    async def validate_and_synthesize_email(self, subject: str, body: str) -> Dict[str, Any]:
+        """
+        Analyze an inbound support email (subject + body) for ticket creation.
+        Reuses the same validation pipeline as chat escalation.
+        """
+        subject = (subject or "").strip()
+        body = (body or "").strip()
+        combined = f"Sujet: {subject}\n\n{body}".strip() if subject else body
+
+        if not combined or len(combined) < 3:
+            return {
+                "is_valid_ticket": False,
+                "rejection_reason": "Email vide ou sans contenu exploitable.",
+            }
+
+        greeting_only_patterns = [
+            r"^(salut|bonjour|hello|hi|hey|coucou|bonsoir)[\s!.?]*$",
+            r"^(comment vas[- ]tu|ça va|ca va|how are you|what'?s up)[\s!.?]*$",
+            r"^(merci|thanks|ok|test|bye|au revoir)[\s!.?]*$",
+        ]
+        subject_lower = subject.lower().strip()
+        body_lower = body.lower().strip()
+        check_text = body_lower or subject_lower
+        if len(check_text) < 30 and any(re.search(p, check_text) for p in greeting_only_patterns):
+            return {
+                "is_valid_ticket": False,
+                "rejection_reason": "Ce message est une salutation sans demande de support. Aucun ticket créé.",
+            }
+        if not body and subject_lower and len(subject) < 25 and any(re.search(p, subject_lower) for p in CASUAL_PATTERNS):
+            return {
+                "is_valid_ticket": False,
+                "rejection_reason": "Le sujet de l'email ne décrit pas un problème technique. Aucun ticket créé.",
+            }
+
+        messages = [ChatMessage(role="user", content=combined)]
+        return await self.validate_and_synthesize_ticket(messages)
+
+    async def create_ticket_from_email(
+        self,
+        subject: str,
+        body: str,
+        user_id: str,
+        attachments: Optional[List[str]] = None,
+    ) -> dict:
+        """Create a ticket from a validated inbound email."""
+        ai_analysis = await self.validate_and_synthesize_email(subject, body)
+
+        if not ai_analysis.get("is_valid_ticket", False):
+            raise ValueError(ai_analysis.get(
+                "rejection_reason",
+                "Cet email ne correspond pas à une demande de support.",
+            ))
+
+        ticket_subject = ai_analysis["subject"]
+        category = ai_analysis["category"]
+        subcategory = ai_analysis["subcategory"]
+        priority = ai_analysis["priority"]
+        keywords = ai_analysis.get("keywords", [])
+        summary = ai_analysis.get("summary", ticket_subject)
+
+        description = (
+            f"## 📌 Résumé de l'incident (Analysé par IA)\n"
+            f"{summary}\n\n"
+            f"## 📧 Email original\n"
+            f"**Sujet :** {subject}\n\n"
+            f"{body}\n\n"
+            f"## 🏷️ Mots-clés IA : {', '.join(keywords)}\n"
+        )
+
+        ticket_in = TicketCreate(
+            subject=ticket_subject,
+            description=description,
+            category=category,
+            subcategory=subcategory,
+            priority=priority,
+            channel=TicketChannel.EMAIL,
+            attachments=attachments or [],
+            keywords=keywords,
+        )
+
+        ticket_service = TicketService(self.db)
+        created_ticket = await ticket_service.create_ticket(ticket_in, user_id)
+
+        routing_service = RoutingService(self.db)
+        try:
+            await routing_service.auto_route_ticket(created_ticket["id"])
+        except Exception as e:
+            logger.warning(f"Email ticket auto-routing warning: {e}")
+
+        refreshed = await ticket_service.get_ticket(created_ticket["id"])
+        return refreshed or created_ticket
+
     async def escalate_to_ticket(
         self,
         messages: List[ChatMessage],
