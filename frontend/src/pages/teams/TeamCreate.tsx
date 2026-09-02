@@ -47,7 +47,7 @@ const PremiumField: React.FC<{
 /* ─────────────────────────────────────────────
    AI ASSISTANT PANEL
 ───────────────────────────────────────────── */
-const AIAssistantPanel: React.FC<{ formData: FormData; agentCount: number }> = ({ formData, agentCount }) => {
+const AIAssistantPanel: React.FC<{ formData: FormData; agentCount?: number }> = ({ formData }) => {
   const hasName = formData.name.trim().length > 0;
   const hasCompetencies = formData.competencies.length > 0;
   const hasAgents = formData.agent_ids.length > 0;

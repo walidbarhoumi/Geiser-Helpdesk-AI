@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Upload, X, Loader2, Zap, Brain,
-  Target, Clock, AlertTriangle, Sparkles, CheckCircle2,
-  Cpu, TrendingUp, Shield
+  Target, Clock, AlertTriangle, Cpu
 } from 'lucide-react';
 import { TicketPriority, TicketChannel } from '../../types';
 import api from '../../api/axios';
+
 
 /* ─── Styles ──────────────────────────────────────────────── */
 const injectStyles = () => {
@@ -111,7 +111,8 @@ const TicketCreate: React.FC = () => {
 
   const aiCards = [
     { icon: <Brain size={13} />, title: 'AI Classification', body: 'Ticket routed to Infrastructure Support based on subject analysis.', color: '139,92,246' },
-    { icon: <Target size={13} />, title: 'Suggested Priority', body: formData.priority === 'CRITICAL' || formData.priority === 'HIGH' ? 'Confirmed High — SLA clock starts on submit.' : 'AI agrees with selected priority level.', color: '96,165,250' },
+    { icon: <Target size={13} />, title: 'Suggested Priority', body: formData.priority === TicketPriority.URGENT || formData.priority === TicketPriority.HIGH ? 'Confirmed High — SLA clock starts on submit.' : 'AI agrees with selected priority level.', color: '96,165,250' },
+
     { icon: <Clock size={13} />, title: 'Est. Resolution', body: '~2–4 hours based on category baseline performance.', color: '52,211,153' },
     { icon: <AlertTriangle size={13} />, title: 'Duplicate Check', body: 'No duplicate incidents found in the last 7 days.', color: '251,146,60' },
   ];

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Search, Plus, Loader2, CheckCircle2, Shield, Edit2, Trash2,
-  X, Users, Zap, TrendingUp, Activity, Filter, MoreVertical,
-  Sparkles, UserCheck, UserX
+  Search, Plus, Loader2, Shield, Edit2, Trash2,
+  X, Users, Zap, Filter, MoreVertical,
+  Sparkles, UserCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { User, UserRole } from '../../types';
@@ -18,10 +18,6 @@ const glass = {
   borderRadius: '20px',
 } as React.CSSProperties;
 
-const glassHover = {
-  background: 'rgba(255,255,255,0.05)',
-  border: '1px solid rgba(139,92,246,0.25)',
-} as React.CSSProperties;
 
 /* ─────────────────────────────────────────────
    STAT CARD

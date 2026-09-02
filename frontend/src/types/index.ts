@@ -50,9 +50,11 @@ export type Ticket = {
   assigned_agent_id?: string | null;
   routing_reason?: string;
   attachments: string[];
+  keywords?: string[];
   created_at: string;
   updated_at: string;
 };
+
 
 export type Agent = {
   id: string;

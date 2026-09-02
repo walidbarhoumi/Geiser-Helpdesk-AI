@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   UserPlus, Search, RefreshCw, Zap, TrendingUp,
-  AlertTriangle, CheckCircle2, XCircle, Activity,
-  MoreHorizontal, Edit3, Trash2, Shield, Star,
-  Users, Clock, Target, Award, ChevronRight, Cpu,
+  AlertTriangle, CheckCircle2, Activity,
+  Edit3, Trash2, Star,
+  Users, Clock, Target, Award, Cpu,
   X, Save, Loader2,
 } from 'lucide-react';
+
 import { type Agent, UserRole } from '../../types';
 import api from '../../api/axios';
 import { useAuth } from '../../store/authContext';

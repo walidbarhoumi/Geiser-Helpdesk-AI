@@ -1,11 +1,13 @@
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from schemas.schemas import TicketCreate, TicketStatus, TicketPriority
+from schemas.schemas import TicketCreate, TicketStatus, TicketPriority, SLAStatus
 from datetime import datetime
 from models.base import MongoModel
 from bson import ObjectId
 import logging
 import re
 from services.email_service import EmailService
+from services.sla_service import SLAService
+
 
 
 class TicketService:
@@ -21,7 +23,9 @@ class TicketService:
         ticket_dict["status"] = TicketStatus.OPEN.value
         ticket_dict["created_at"] = datetime.utcnow()
         ticket_dict["updated_at"] = datetime.utcnow()
-        ticket_dict["attachments"] = []
+        ticket_dict["attachments"] = ticket_dict.get("attachments") or []
+        ticket_dict["keywords"] = ticket_dict.get("keywords") or []
+
 
         # Auto-assignment logic
         assigned_agent = await self._auto_assign_agent(ticket_in.category)

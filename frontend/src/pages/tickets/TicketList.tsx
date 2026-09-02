@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Search, Plus, ChevronLeft, ChevronRight, Download,
+  Search, Plus, ChevronLeft, ChevronRight,
   Zap, AlertTriangle, TrendingUp, Clock, Activity,
-  Target, Shield, Award, RefreshCw, Cpu, Trash2,
+  Target, Award, RefreshCw, Cpu, Trash2,
   ArrowUpRight, CheckCircle2, Circle, XCircle, AlertCircle, Bot, Sparkles, Loader2
 } from 'lucide-react';
 import { type Ticket, type RoutingResult, TicketStatus, TicketPriority, UserRole } from '../../types';
+
 import api from '../../api/axios';
 import { useAuth } from '../../store/authContext';
 import { format } from 'date-fns';

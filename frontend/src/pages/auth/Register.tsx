@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, Loader2, ArrowRight, Check } from 'lucide-react';
+import { Mail, Lock, User, Loader2, ArrowRight } from 'lucide-react';
 import api from '../../api/axios';
+
 
 const Register: React.FC = () => {
   const [formData, setFormData] = useState({ email: '', password: '', full_name: '' });

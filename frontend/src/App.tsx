@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './store/authContext';
 import ProtectedRoute from './components/common/ProtectedRoute';
@@ -6,9 +6,10 @@ import { Toaster } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Ticket, Users, Bot, Shield,
-  LogOut, Zap, ChevronRight, Bell, Search, Settings,
+  LogOut, ChevronRight, Bell, Search, Settings,
   Activity, Command, Sparkles
 } from 'lucide-react';
+
 
 // Pages
 import Login from './pages/auth/Login';
@@ -28,6 +29,7 @@ import UserList from './pages/users/UserList';
 import Profile from './pages/profile/Profile';
 
 import { UserRole } from './types';
+import { SupportChatbot } from './components/chat/SupportChatbot';
 
 /* ─────────────────────────────────────────────
    GLOBAL STYLES INJECTED ONCE
@@ -636,9 +638,11 @@ const AppLayout: React.FC = () => {
           <Outlet />
         </PageTransition>
       </main>
+      <SupportChatbot />
     </div>
   );
 };
+
 
 /* ─────────────────────────────────────────────
    CUSTOM TOASTER CONFIG

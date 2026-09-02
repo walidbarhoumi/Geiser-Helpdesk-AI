@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, UserPlus, X, Plus, Loader2, CheckCircle2,
-  Cpu, Zap, Target, TrendingUp, Shield, Star, Activity,
-  Sparkles, Brain, Award
+  Cpu, Target, TrendingUp, Brain
 } from 'lucide-react';
+
 import api from '../../api/axios';
 
 /* ─── Styles ──────────────────────────────────────────────── */

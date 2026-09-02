@@ -3,8 +3,9 @@ import {
   User, Mail, Shield, Calendar, Key, Bell, Bot, Edit3,
   Zap, TrendingUp, Clock, Star, Lock, Smartphone,
   Globe, MapPin, ChevronRight, Activity, Award,
-  BarChart2, Cpu, AlertTriangle, CheckCircle, Eye,
+  BarChart2, Cpu, AlertTriangle, Eye,
 } from 'lucide-react';
+
 import { useAuth } from '../../store/authContext';
 import { format } from 'date-fns';
 

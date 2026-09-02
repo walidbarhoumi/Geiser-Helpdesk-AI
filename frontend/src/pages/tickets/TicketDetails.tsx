@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Clock, AlertTriangle, Shield, User,
+  ArrowLeft, AlertTriangle, Shield, User,
   Bot, Sparkles, Loader2, CheckCircle2, XCircle,
   Activity, Zap, Paperclip, MessageSquare, Send,
-  Cpu, Target, Award, Brain, Info, Check, Copy, RefreshCw
+  Target, Award, Brain, Info, Check
 } from 'lucide-react';
-import { type Ticket, type RoutingResult, TicketStatus, TicketPriority, UserRole } from '../../types';
+import { type Ticket, type RoutingResult, UserRole } from '../../types';
 import api from '../../api/axios';
 import { useAuth } from '../../store/authContext';
 import { format } from 'date-fns';
+
 
 /* ─── Styles ──────────────────────────────────────────────── */
 const injectStyles = () => {

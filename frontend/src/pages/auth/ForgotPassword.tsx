@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Mail, Loader2, ArrowLeft, ArrowRight, CheckCircle2, Send } from 'lucide-react';
+import { Mail, Loader2, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
 import api from '../../api/axios';
+
 
 const ForgotPassword: React.FC = () => {
   const [email, setEmail] = useState('');

@@ -30,6 +30,13 @@ class TicketChannel(str, Enum):
     CHAT = "CHAT"
 
 
+class SLAStatus(str, Enum):
+    ON_TRACK = "ON_TRACK"
+    AT_RISK = "AT_RISK"
+    BREACHED = "BREACHED"
+
+
+
 # ──────────────────────────────────────────────
 # User Schemas
 # ──────────────────────────────────────────────
@@ -189,10 +196,13 @@ class TicketBase(BaseModel):
     subcategory: Optional[str] = None
     priority: TicketPriority = TicketPriority.LOW
     channel: TicketChannel = TicketChannel.WEB
+    attachments: Optional[List[str]] = []
+    keywords: Optional[List[str]] = []
 
 
 class TicketCreate(TicketBase):
     pass
+
 
 
 class TicketUpdate(BaseModel):
@@ -204,6 +214,7 @@ class TicketUpdate(BaseModel):
     priority: Optional[TicketPriority] = None
     assigned_agent_id: Optional[str] = None
     routing_reason: Optional[str] = None
+    keywords: Optional[List[str]] = None
 
 
 class StatusUpdateRequest(BaseModel):
@@ -229,11 +240,47 @@ class TicketOut(BaseModel):
     assigned_agent_id: Optional[str] = None
     routing_reason: Optional[str] = None
     attachments: List[str] = []
+    keywords: List[str] = []
+    # SLA Fields
+    sla_deadline: Optional[datetime] = None
+    sla_status: SLAStatus = SLAStatus.ON_TRACK
+    sla_breached_at: Optional[datetime] = None
+    sla_response_deadline: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         populate_by_name = True
+
+
+# ──────────────────────────────────────────────
+# SLA Policy Schemas
+# ──────────────────────────────────────────────
+
+class SLAPolicyOut(BaseModel):
+    """SLA Policy definition for each priority level."""
+    priority: TicketPriority
+    response_time_hours: float       # Max time to first response
+    resolution_time_hours: float     # Max time to resolve
+    at_risk_threshold_pct: float = 0.20  # Trigger AT_RISK when < 20% time left
+
+
+class SLAPolicyUpdate(BaseModel):
+    response_time_hours: Optional[float] = None
+    resolution_time_hours: Optional[float] = None
+    at_risk_threshold_pct: Optional[float] = None
+
+
+class SLAAlertOut(BaseModel):
+    """An active SLA warning for a specific ticket."""
+    ticket_id: str
+    subject: str
+    priority: TicketPriority
+    sla_status: SLAStatus
+    sla_deadline: datetime
+    time_remaining_minutes: int
+    assigned_agent_id: Optional[str] = None
+    created_at: datetime
 
 
 class RoutingResult(BaseModel):
@@ -271,3 +318,36 @@ class AIHistoryRecord(BaseModel):
 
     class Config:
         populate_by_name = True
+
+
+# ──────────────────────────────────────────────
+# Chatbot Schemas
+# ──────────────────────────────────────────────
+
+class ChatMessage(BaseModel):
+    role: str # "user", "assistant", "system"
+    content: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    session_id: Optional[str] = None
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    suggested_actions: List[str] = []
+    can_escalate: bool = False
+    intent: Optional[str] = None
+    confidence_score: float = 0.8
+    source: str = "llm" # "knowledge_base" or "llm" or "fallback"
+
+
+class ChatEscalateRequest(BaseModel):
+    messages: List[ChatMessage]
+    custom_subject: Optional[str] = None
+    attachments: Optional[List[str]] = []
+
+
+
