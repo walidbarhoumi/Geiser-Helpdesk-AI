@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
 import { type SLAStatus } from '../../types';
 

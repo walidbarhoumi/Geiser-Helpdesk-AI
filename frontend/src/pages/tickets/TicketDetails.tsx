@@ -3,8 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, AlertTriangle, Shield, User,
   Bot, Sparkles, Loader2, CheckCircle2, XCircle,
-  Activity, Zap, Paperclip, MessageSquare, Send,
-  Target, Award, Brain, Info, Check
+  Activity, Zap, MessageSquare, Send,
+  Award, Paperclip
+
 } from 'lucide-react';
 import { type Ticket, type RoutingResult, UserRole } from '../../types';
 import api from '../../api/axios';
@@ -12,6 +13,7 @@ import { useAuth } from '../../store/authContext';
 import { format } from 'date-fns';
 import SLABadge from '../../components/sla/SLABadge';
 import { type SLATicketDetail } from '../../types';
+import IntelligentTriagePanel from '../../components/ai/IntelligentTriagePanel';
 
 
 /* ─── Styles ──────────────────────────────────────────────── */
@@ -112,11 +114,6 @@ const TicketDetails: React.FC = () => {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
   
-  // AI States
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [aiResult, setAiResult] = useState<any>(null);
-  const [editableResponse, setEditableResponse] = useState('');
-  
   const [isRouting, setIsRouting] = useState(false);
   const [routingResult, setRoutingResult] = useState<RoutingResult | null>(null);
   const [slaDetail, setSlaDetail] = useState<SLATicketDetail | null>(null);
@@ -157,27 +154,8 @@ const TicketDetails: React.FC = () => {
     }
   };
 
-  const handleGenerateAiResponse = async () => {
-    if (!id) return;
-    setIsGenerating(true);
-    try {
-      const res = await api.post(`/ai/tickets/${id}/generate-response`);
-      setAiResult(res.data);
-      setEditableResponse(res.data.generated_response);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleSendResponse = async () => {
-    // Mock send - in real app, call /tickets/{id}/send-ai-response
-    alert("Response sent to user via email!");
-    setAiResult(null);
-  };
-
   if (loading) return (
+
     <div style={{ height: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '1rem' }}>
       <Loader2 size={40} className="animate-spin" style={{ color: '#8b5cf6', animation: 'td-spin 1s linear infinite' }} />
       <span style={{ color: 'rgba(255,255,255,.3)', fontSize: '.875rem', fontWeight: 600 }}>Analyzing ticket sequence…</span>
@@ -263,83 +241,43 @@ const TicketDetails: React.FC = () => {
         </div>
       )}
 
+      {/* Solution Appliquée / Résolue Banner */}
+      {ticket.resolution_note && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.06) 100%)',
+          border: '1px solid rgba(16, 185, 129, 0.35)',
+          borderRadius: '18px',
+          padding: '1.25rem 1.5rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CheckCircle2 size={18} style={{ color: '#34d399' }} />
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Solution Validée & Enregistrée
+            </span>
+          </div>
+          <p style={{ margin: 0, fontSize: '0.92rem', color: '#f8fafc', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+            {ticket.resolution_note}
+          </p>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '2rem', alignItems: 'start' }}>
         
         {/* Left Content */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
           
-          {/* AI Kopilot Section */}
-          <div className="ai-smart-card" style={{ padding: '1.5rem' }}>
-             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa' }}>
-                    <Brain size={22} />
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f1f5f9' }}>AI Smart Reply</h3>
-                    <p style={{ margin: 0, fontSize: '.75rem', color: 'rgba(255,255,255,.4)' }}>Generate professional responses and solutions.</p>
-                  </div>
-                </div>
-                {!aiResult && !isGenerating && (
-                  <button onClick={handleGenerateAiResponse} className="td-auto-btn" style={{ padding: '.6rem 1.25rem', borderRadius: 12, fontSize: '.875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-                    <Sparkles size={16} /> Generate AI Response
-                  </button>
-                )}
-             </div>
+          {/* Intelligent Triage Panel */}
+          {user?.role !== UserRole.USER && ticket.status !== 'CLOSED' && (
+            <IntelligentTriagePanel
+              ticketId={ticket.id}
+              onResponseSent={fetchTicket}
+              onTicketResolved={fetchTicket}
+            />
+          )}
 
-             {isGenerating && (
-               <div style={{ padding: '2rem', textAlign: 'center' }}>
-                 <Loader2 size={32} className="animate-spin" style={{ color: '#8b5cf6', margin: '0 auto 1rem', animation: 'td-spin 1s linear infinite' }} />
-                 <p style={{ fontSize: '.875rem', color: 'rgba(255,255,255,.5)' }}>Gemma3 is analyzing ticket intent and drafting response...</p>
-                 <div className="ai-shimmer" style={{ height: 4, width: '100%', borderRadius: 2, marginTop: '1rem' }} />
-               </div>
-             )}
-
-             {aiResult && (
-               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', animation: 'td-in-up 0.4s ease both' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(139,92,246,0.1)', padding: '.75rem 1rem', borderRadius: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <Target size={14} style={{ color: '#a78bfa' }} />
-                      <span style={{ fontSize: '.75rem', fontWeight: 700, color: '#a78bfa' }}>INTENT: {aiResult.intent}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <Award size={14} style={{ color: aiResult.confidence_score > 85 ? '#34d399' : '#fb923c' }} />
-                      <span style={{ fontSize: '.75rem', fontWeight: 700, color: '#f1f5f9' }}>{aiResult.confidence_score}% Confidence</span>
-                      <span style={{ fontSize: '.6rem', padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, color: 'rgba(255,255,255,0.4)' }}>{aiResult.match_quality}</span>
-                    </div>
-                  </div>
-
-                  <textarea 
-                    className="ai-input-area"
-                    value={editableResponse}
-                    onChange={(e) => setEditableResponse(e.target.value)}
-                    placeholder="AI generated response..."
-                  />
-
-                  <div>
-                    <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <Info size={12} /> Tech Suggestions
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      {aiResult.suggestions.map((s: string, i: number) => (
-                        <div key={i} className="suggestion-chip" onClick={() => setEditableResponse(prev => prev + "\n\n💡 Suggestion: " + s)}>
-                          <Zap size={12} /> {s}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1.25rem' }}>
-                    <button onClick={() => setAiResult(null)} className="td-action-btn" style={{ padding: '.6rem 1.25rem', borderRadius: 12, fontSize: '.875rem', fontWeight: 700 }}>
-                      Discard
-                    </button>
-                    <button onClick={handleSendResponse} className="td-auto-btn" style={{ flex: 1, padding: '.6rem 1.25rem', borderRadius: 12, fontSize: '.875rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                      <Check size={18} /> Approve & Send Response
-                    </button>
-                  </div>
-               </div>
-             )}
-          </div>
 
           {/* AI Routing Result Banner or Persistent Reason */}
           {(routingResult || ticket.routing_reason) && (

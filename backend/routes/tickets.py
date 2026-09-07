@@ -4,8 +4,11 @@ from database.mongodb import get_database
 from core.deps import get_current_user, RoleChecker
 from schemas.schemas import (
     TicketCreate, TicketOut, TicketStatus, TicketUpdate,
-    StatusUpdateRequest, AssignAgentRequest, UserRole
+    StatusUpdateRequest, AssignAgentRequest, UserRole,
+    TicketResolveRequest, SendTicketResponseRequest
 )
+from services.email_service import EmailService
+
 from controllers.ticket_controller import TicketController
 from services.ticket_service import TicketService
 from services.routing_service import RoutingService
@@ -150,6 +153,111 @@ async def update_ticket(
     update_data["updated_at"] = datetime.utcnow()
     await db.tickets.update_one({"_id": MongoModel.to_object_id(id)}, {"$set": update_data})
     return await service.get_ticket(id)
+
+
+@router.post("/{id}/send-response")
+async def send_ticket_response(
+    id: str,
+    body: SendTicketResponseRequest,
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT])),
+    db=Depends(get_database)
+):
+    """
+    Sends an official support response to the user via email
+    and logs the response in the ticket audit thread.
+    """
+    service = TicketService(db)
+    ticket = await service.get_ticket(id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    user = await db.users.find_one({"_id": MongoModel.to_object_id(ticket["user_id"])})
+    if user and user.get("email"):
+        formatted_html = body.response_text.replace("\n", "<br/>")
+        EmailService.send_email(
+            user["email"],
+            f"Mise à jour Support GEISER : #{ticket['id'][-6:].upper()} - {ticket['subject']}",
+            f"<div style='font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b;'>"
+            f"<p>Bonjour,</p>"
+            f"<p>Un technicien du support GEISER a répondu à votre ticket <b>#{ticket['id'][-6:].upper()}</b> :</p>"
+            f"<div style='background: #f8fafc; border-left: 4px solid #7c3aed; padding: 12px 16px; margin: 16px 0; border-radius: 4px;'>"
+            f"{formatted_html}"
+            f"</div>"
+            f"<p>Pour toute question ou complément, répondez à ce message ou consultez votre portail d'assistance.</p>"
+            f"<p>Cordialement,<br/><b>L'équipe Support GEISER</b></p>"
+            f"</div>"
+        )
+
+    # Append response to thread
+    new_response = {
+        "sender_id": str(current_user["id"]),
+        "sender_name": current_user.get("full_name") or current_user.get("email"),
+        "role": current_user.get("role", "AGENT"),
+        "content": body.response_text,
+        "created_at": datetime.utcnow()
+    }
+
+    await db.tickets.update_one(
+        {"_id": MongoModel.to_object_id(id)},
+        {
+            "$push": {"responses": new_response},
+            "$set": {"updated_at": datetime.utcnow()}
+        }
+    )
+
+    return {"success": True, "message": "Réponse envoyée avec succès par e-mail au demandeur."}
+
+
+@router.post("/{id}/resolve", response_model=TicketOut)
+async def resolve_ticket(
+    id: str,
+    body: TicketResolveRequest,
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT])),
+    db=Depends(get_database)
+):
+    """
+    Resolves a ticket and records the resolution_note for historical AI learning and triage.
+    """
+    service = TicketService(db)
+    ticket = await service.get_ticket(id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    oid = MongoModel.to_object_id(id)
+    now = datetime.utcnow()
+
+    # Update ticket to RESOLVED with resolution note
+    await db.tickets.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "status": TicketStatus.RESOLVED.value,
+                "resolution_note": body.resolution_note,
+                "updated_at": now
+            }
+        }
+    )
+
+    updated_ticket = await service.get_ticket(id)
+
+    # Notify user of resolution
+    user = await db.users.find_one({"_id": MongoModel.to_object_id(ticket["user_id"])})
+    if user and user.get("email"):
+        EmailService.send_email(
+            user["email"],
+            f"Ticket Résolu : #{ticket['id'][-6:].upper()} - {ticket['subject']}",
+            f"<div style='font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b;'>"
+            f"<h2 style='color: #059669;'>Votre ticket a été résolu</h2>"
+            f"<p>Votre demande <b>#{ticket['id'][-6:].upper()}</b> ({ticket['subject']}) a été clôturée avec succès.</p>"
+            f"<div style='background: #f0fdf4; border-left: 4px solid #10b981; padding: 12px 16px; margin: 16px 0; border-radius: 4px;'>"
+            f"<b>Solution appliquée :</b><br/>{body.resolution_note.replace(chr(10), '<br/>')}"
+            f"</div>"
+            f"<p>Merci d'avoir fait appel au support GEISER.</p>"
+            f"</div>"
+        )
+
+    return updated_ticket
+
 
 
 @router.post("/{id}/attachments")

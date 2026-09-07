@@ -699,3 +699,26 @@ AttributeError: module 'bcrypt' has no attribute '__about__'
 2026-09-02 13:56:33,643 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
 2026-09-02 13:56:33,643 - apscheduler.scheduler - INFO - Scheduler started
 2026-09-02 13:56:33,644 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-07 13:37:55,584 - root - INFO - Connecting to MongoDB...
+2026-09-07 13:37:55,981 - root - INFO - Connected to MongoDB!
+2026-09-07 13:37:56,413 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-07 13:37:56,423 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-07 13:37:56,426 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-07 13:37:56,430 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-07 13:37:56,432 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-07 13:37:56,434 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-07 13:37:56,435 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-07 13:37:56,435 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-07 13:42:12,651 - root - INFO - Closing MongoDB connection...
+2026-09-07 13:42:12,654 - root - INFO - MongoDB connection closed!
+2026-09-07 13:42:12,654 - apscheduler.scheduler - INFO - Scheduler has been shut down
+2026-09-07 13:42:15,828 - root - INFO - Connecting to MongoDB...
+2026-09-07 13:42:15,852 - root - INFO - Connected to MongoDB!
+2026-09-07 13:42:16,218 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-07 13:42:16,225 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-07 13:42:16,230 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-07 13:42:16,234 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-07 13:42:16,236 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-07 13:42:16,237 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-07 13:42:16,237 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-07 13:42:16,237 - main - INFO - SLA monitor scheduled (every 15 minutes)

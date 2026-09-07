@@ -345,8 +345,18 @@ const TicketList: React.FC = () => {
                     </td>
                     <td style={{ padding: '.9rem 1.25rem', maxWidth: 280 }}>
                       <Link to={`/tickets/${ticket.id}`} style={{ display: 'block', fontWeight: 600, color: 'rgba(255,255,255,.8)', fontSize: '.875rem', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', transition: 'color .15s' }}>{ticket.subject}</Link>
-                      <span style={{ fontSize: '.7rem', color: 'rgba(255,255,255,.3)', marginTop: '.15rem', display: 'block' }}>{ticket.category} · {ticket.channel}</span>
+
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', marginTop: '.15rem' }}>
+                        <span style={{ fontSize: '.7rem', color: 'rgba(255,255,255,.3)' }}>{ticket.category} · {ticket.channel}</span>
+                        {ticket.resolution_note && (
+                          <span style={{ fontSize: '.62rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(16,185,129,.12)', color: '#34d399', fontWeight: 700 }}>
+                            ✓ Solution archivée
+                          </span>
+                        )}
+                      </div>
                     </td>
+
                     <td style={{ padding: '.9rem 1.25rem' }}><StatusBadge status={ticket.status} /></td>
                     <td style={{ padding: '.9rem 1.25rem' }}><PriorityDot priority={ticket.priority} /></td>
                     <td style={{ padding: '.9rem 1.25rem' }}>

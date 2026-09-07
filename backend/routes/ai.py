@@ -3,7 +3,7 @@ from ai.ollama_client import OllamaClient
 from services.ai.ai_response_service import AIResponseService
 from database.mongodb import get_database
 from core.deps import RoleChecker, get_current_user
-from schemas.schemas import UserRole, KnowledgeBaseItem
+from schemas.schemas import UserRole, KnowledgeBaseItem, IntelligentTriageResult
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
@@ -32,6 +32,26 @@ async def generate_ai_response(
     ai_service = AIResponseService(db)
     return await ai_service.generate_full_response(ticket_id, ticket)
 
+@router.get("/tickets/{ticket_id}/intelligent-triage", response_model=IntelligentTriageResult)
+async def get_intelligent_triage(
+    ticket_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_database),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+):
+    """
+    Runs full intelligent triage: detects repetitive tickets,
+    evaluates best resolution, and proposes standard canned responses.
+    """
+    from services.ai.intelligent_triage_service import IntelligentTriageService
+    service = IntelligentTriageService(db)
+    try:
+        return await service.run_full_triage(ticket_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Triage error: {str(e)}")
+
+
 @router.get("/knowledge-base")
 async def get_knowledge_base(
     db: AsyncIOMotorDatabase = Depends(get_database),
@@ -50,3 +70,4 @@ async def add_to_knowledge_base(
     ai_service = AIResponseService(db)
     await ai_service.save_kb_item(item.dict())
     return {"message": "Knowledge base item added successfully"}
+

@@ -82,6 +82,7 @@ export type Ticket = {
   sla_status?: SLAStatus;
   sla_breached_at?: string;
   sla_response_deadline?: string;
+  resolution_note?: string;
   created_at: string;
   updated_at: string;
 };
@@ -125,3 +126,136 @@ export type RoutingResult = {
   routing_reason: string;
   created_at: string;
 };
+
+export type SimilarTicket = {
+  ticket_id: string;
+  subject: string;
+  category: string;
+  subcategory?: string;
+  priority: TicketPriority;
+  status: TicketStatus;
+  similarity_score: number;
+  resolution_note?: string;
+  created_at: string;
+  resolved_at?: string;
+};
+
+export type BestSolution = {
+  recommended_solution: string;
+  confidence_score: number;
+  source_type: "HISTORICAL_TICKET" | "KNOWLEDGE_BASE" | "AI_SYNTHESIS" | string;
+  source_reference?: string;
+  actionable_steps: string[];
+  key_findings: string[];
+};
+
+export type CannedResponseTemplate = {
+  id: string;
+  category: "RESOLUTION" | "CLARIFICATION" | "IN_PROGRESS" | "ESCALATION" | string;
+  title: string;
+  preview_text: string;
+  full_body: string;
+};
+
+export type IntelligentTriageResult = {
+  ticket_id: string;
+  is_repetitive: boolean;
+  recurrence_count: number;
+  repetitive_reason?: string;
+  similarity_threshold_used: number;
+  similar_tickets: SimilarTicket[];
+  best_solution: BestSolution;
+  canned_responses: CannedResponseTemplate[];
+  intent?: string;
+  created_at: string;
+};
+
+/* ─── Predictive Analytics Types ─── */
+export type VolumeTrendPoint = {
+  date: string;
+  label: string;
+  total_tickets: number;
+  resolved_count: number;
+  urgent_count: number;
+};
+
+export type CategoryBreakdown = {
+  category: string;
+  count: number;
+  percentage: number;
+  avg_resolution_hours: number;
+};
+
+export type AgentPerformance = {
+  agent_id: string;
+  agent_name: string;
+  email: string;
+  skills: string[];
+  is_available: boolean;
+  workload: number;
+  assigned_count: number;
+  resolved_count: number;
+  avg_resolution_hours: number;
+  sla_compliance_pct: number;
+  efficiency_rating: string;
+};
+
+export type MTTRByPriority = {
+  priority: TicketPriority;
+  avg_resolution_hours: number;
+  sla_target_hours: number;
+  is_within_sla: boolean;
+};
+
+export type MTTRMetrics = {
+  overall_avg_hours: number;
+  by_priority: MTTRByPriority[];
+  by_category: CategoryBreakdown[];
+  sla_compliance_overall_pct: number;
+};
+
+export type StrategicRecurrentIssue = {
+  cluster_id: string;
+  title: string;
+  category: string;
+  recurrence_count: number;
+  impact_level: "CRITIQUE" | "ÉLEVÉ" | "MOYEN" | string;
+  estimated_hours_lost: number;
+  root_cause_analysis: string;
+  ai_strategic_recommendation: string;
+  preventive_action_plan: string[];
+  sample_ticket_ids: string[];
+};
+
+export type AIPredictiveInsights = {
+  forecast_summary: string;
+  predicted_volume_next_week: number;
+  volume_growth_trend_pct: number;
+  predicted_spike_risk: "ÉLEVÉ" | "MODÉRÉ" | "FAIBLE" | string;
+  peak_time_windows: string[];
+  strategic_issues: StrategicRecurrentIssue[];
+  recommended_focus_areas: string[];
+};
+
+export type SummaryKPIs = {
+  total_tickets: number;
+  open_tickets: number;
+  in_progress_tickets: number;
+  resolved_tickets: number;
+  resolution_rate_pct: number;
+  overall_mttr_hours: number;
+  overall_sla_compliance_pct: number;
+  critical_recurring_count: number;
+};
+
+export type AnalyticsDashboardData = {
+  kpis: SummaryKPIs;
+  volume_trends: VolumeTrendPoint[];
+  category_distribution: CategoryBreakdown[];
+  agent_performances: AgentPerformance[];
+  mttr_metrics: MTTRMetrics;
+  predictive_insights: AIPredictiveInsights;
+  generated_at: string;
+};
+
+
