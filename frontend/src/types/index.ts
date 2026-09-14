@@ -83,6 +83,14 @@ export type Ticket = {
   sla_breached_at?: string;
   sla_response_deadline?: string;
   resolution_note?: string;
+  responses?: Array<{
+    id?: string;
+    sender_name?: string;
+    role?: string;
+    content: string;
+    created_at?: string;
+    is_internal?: boolean;
+  }>;
   created_at: string;
   updated_at: string;
 };
@@ -257,5 +265,42 @@ export type AnalyticsDashboardData = {
   predictive_insights: AIPredictiveInsights;
   generated_at: string;
 };
+
+// ──────────────────────────────────────────────
+// Agent Assistant (Copilot) Types
+// ──────────────────────────────────────────────
+
+export type ThreadSummary = {
+  ticket_id: string;
+  summary: string;
+  problem_statement: string;
+  actions_already_taken: string[];
+  current_blocker?: string | null;
+  suggested_next_step: string;
+  urgency_evaluation: string;
+  generated_at: string;
+};
+
+export type SuggestedAction = {
+  id: string;
+  action_type: "COMMUNICATION" | "DIAGNOSTIC" | "SYSTEM" | "ESCALATION" | string;
+  title: string;
+  description: string;
+  snippet_to_insert?: string | null;
+  impact: "HIGH" | "MEDIUM" | "LOW" | string;
+  category: string;
+};
+
+export type InternalDocItem = {
+  id: string;
+  title: string;
+  category: string;
+  tags: string[];
+  content_snippet: string;
+  full_content: string;
+  relevance_score: number;
+  source_type: "SOP_INTERNE" | "GUIDE_SECURITE_ISO27001" | "BASE_CONNAISSANCES" | string;
+};
+
 
 

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from datetime import datetime
 from enum import Enum
 
@@ -254,6 +254,11 @@ class TicketOut(BaseModel):
     attachments: List[str] = []
     keywords: List[str] = []
     resolution_note: Optional[str] = None
+    responses: List[Dict[str, Any]] = []
+    # Customer Satisfaction (CSAT)
+    satisfaction_rating: Optional[int] = Field(None, ge=1, le=5)
+    satisfaction_comment: Optional[str] = None
+    satisfaction_submitted_at: Optional[datetime] = None
     # SLA Fields
     sla_deadline: Optional[datetime] = None
     sla_status: SLAStatus = SLAStatus.ON_TRACK
@@ -557,5 +562,78 @@ class InternalDocItem(BaseModel):
     full_content: str
     relevance_score: float
     source_type: str = "SOP_INTERNE"  # "SOP_INTERNE", "GUIDE_SECURITE_ISO27001", "BASE_CONNAISSANCES"
+
+
+# ──────────────────────────────────────────────
+# Module 3: Suivi, Reporting & Manager Schemas
+# ──────────────────────────────────────────────
+
+class TicketSatisfactionRequest(BaseModel):
+    rating: int = Field(..., ge=1, le=5, description="CSAT Rating between 1 and 5 stars")
+    comment: Optional[str] = Field(None, max_length=1000)
+
+
+class NotificationOut(BaseModel):
+    id: str
+    user_id: str
+    user_email: Optional[str] = None
+    ticket_id: Optional[str] = None
+    channel: str  # "EMAIL", "SMS", "IN_APP"
+    title: str
+    message: str
+    status: str  # "SENT", "DELIVERED", "FAILED"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ManagerKPIs(BaseModel):
+    total_tickets: int
+    open_tickets: int
+    in_progress_tickets: int
+    resolved_tickets: int
+    sla_compliance_pct: float
+    avg_resolution_hours: float
+    avg_first_response_hours: float
+    avg_csat_score: float  # / 5.0
+    csat_response_count: int
+
+
+class ManagerTeamMetric(BaseModel):
+    team_id: str
+    team_name: str
+    assigned_tickets: int
+    resolved_tickets: int
+    sla_compliance_pct: float
+    avg_resolution_hours: float
+
+
+class ManagerAgentMetric(BaseModel):
+    agent_id: str
+    agent_name: str
+    email: str
+    team_name: Optional[str] = None
+    assigned_count: int
+    resolved_count: int
+    sla_compliance_pct: float
+    avg_resolution_hours: float
+    avg_csat_score: float
+    efficiency_rating: str
+
+
+class ManagerSatisfactionSummary(BaseModel):
+    avg_score: float
+    total_reviews: int
+    distribution: Dict[str, int] = {}  # "5_star": 10, "4_star": 4, etc.
+    recent_feedback: List[Dict[str, Any]] = []
+
+
+class ManagerDashboardOut(BaseModel):
+    kpis: ManagerKPIs
+    team_metrics: List[ManagerTeamMetric] = []
+    agent_metrics: List[ManagerAgentMetric] = []
+    satisfaction_summary: ManagerSatisfactionSummary
+    priority_breakdown: Dict[str, int] = {}
+    filtered_tickets_count: int
+    period_label: str
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
 
 

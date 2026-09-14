@@ -3,9 +3,13 @@ from ai.ollama_client import OllamaClient
 from services.ai.ai_response_service import AIResponseService
 from database.mongodb import get_database
 from core.deps import RoleChecker, get_current_user
-from schemas.schemas import UserRole, KnowledgeBaseItem, IntelligentTriageResult
+from schemas.schemas import (
+    UserRole, KnowledgeBaseItem, IntelligentTriageResult,
+    ThreadSummaryOut, SuggestedActionItem, InternalDocItem
+)
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
+from typing import List, Optional
 
 router = APIRouter()
 
@@ -70,4 +74,61 @@ async def add_to_knowledge_base(
     ai_service = AIResponseService(db)
     await ai_service.save_kb_item(item.dict())
     return {"message": "Knowledge base item added successfully"}
+
+
+@router.get("/tickets/{ticket_id}/summarize", response_model=ThreadSummaryOut)
+async def summarize_ticket_thread(
+    ticket_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_database),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+):
+    """
+    Summarizes entire conversation thread for agents: initial issue,
+    actions taken, blockers, and next steps.
+    """
+    from services.ai.agent_assistant_service import AgentAssistantService
+    service = AgentAssistantService(db)
+    try:
+        return await service.summarize_ticket_thread(ticket_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Summary error: {str(e)}")
+
+
+@router.get("/tickets/{ticket_id}/suggested-actions", response_model=List[SuggestedActionItem])
+async def get_suggested_actions(
+    ticket_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_database),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+):
+    """
+    Provides smart recommended next actions for the agent handling the ticket.
+    """
+    from services.ai.agent_assistant_service import AgentAssistantService
+    service = AgentAssistantService(db)
+    try:
+        return await service.suggest_smart_actions(ticket_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Actions error: {str(e)}")
+
+
+@router.get("/internal-docs/search", response_model=List[InternalDocItem])
+async def search_internal_documentation(
+    query: str = "",
+    category: Optional[str] = None,
+    db: AsyncIOMotorDatabase = Depends(get_database),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+):
+    """
+    Quickly search internal SOPs and ISO 27001 / KB documentation.
+    """
+    from services.ai.agent_assistant_service import AgentAssistantService
+    service = AgentAssistantService(db)
+    try:
+        return await service.search_internal_docs(query=query, category=category)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Docs search error: {str(e)}")
 

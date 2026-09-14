@@ -186,9 +186,23 @@ class AnalyticsService:
             user_id = agent.get("user_id")
 
             # Look up agent user info (full_name, email)
-            user = await self.users.find_one({"_id": MongoModel.to_object_id(user_id)}) if user_id else None
-            name = user.get("full_name") if user else f"Agent #{agent_id[-4:]}"
-            email = user.get("email") if user else "agent@geiser.internal"
+            user = None
+            if user_id:
+                try:
+                    user = await self.users.find_one({"_id": MongoModel.to_object_id(user_id)})
+                except Exception:
+                    user = await self.users.find_one({"$or": [{"email": user_id}, {"username": user_id}]})
+
+            if user and user.get("full_name"):
+                name = user.get("full_name")
+            elif user_id and "." in user_id:
+                name = " ".join(p.capitalize() for p in user_id.split("@")[0].split("."))
+            elif user_id:
+                name = user_id.capitalize()
+            else:
+                name = f"Agent #{agent_id[-4:]}"
+
+            email = user.get("email") if user else f"{user_id or 'agent'}@geiser.internal"
 
             # Filter tickets assigned to this agent
             assigned_tickets = [t for t in tickets if str(t.get("assigned_agent_id")) == agent_id]

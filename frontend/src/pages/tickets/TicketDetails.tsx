@@ -14,6 +14,7 @@ import { format } from 'date-fns';
 import SLABadge from '../../components/sla/SLABadge';
 import { type SLATicketDetail } from '../../types';
 import IntelligentTriagePanel from '../../components/ai/IntelligentTriagePanel';
+import { AgentCopilotDrawer } from '../../components/ai/AgentCopilotDrawer';
 
 
 /* ─── Styles ──────────────────────────────────────────────── */
@@ -117,6 +118,9 @@ const TicketDetails: React.FC = () => {
   const [isRouting, setIsRouting] = useState(false);
   const [routingResult, setRoutingResult] = useState<RoutingResult | null>(null);
   const [slaDetail, setSlaDetail] = useState<SLATicketDetail | null>(null);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [isSendingComment, setIsSendingComment] = useState(false);
 
   useEffect(() => { injectStyles(); }, []);
 
@@ -154,6 +158,23 @@ const TicketDetails: React.FC = () => {
     }
   };
 
+  const handleSendComment = async () => {
+    if (!commentText.trim() || !id) return;
+    setIsSendingComment(true);
+    try {
+      await api.post(`/tickets/${id}/send-response`, {
+        response_text: commentText,
+        is_internal: false
+      });
+      setCommentText('');
+      fetchTicket();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSendingComment(false);
+    }
+  };
+
   if (loading) return (
 
     <div style={{ height: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '1rem' }}>
@@ -187,6 +208,28 @@ const TicketDetails: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem' }}>
+          {user?.role !== UserRole.USER && (
+            <button 
+              className="td-action-btn" 
+              onClick={() => setCopilotOpen(true)}
+              style={{
+                padding: '.6rem 1.25rem',
+                borderRadius: 12,
+                fontSize: '.875rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '.5rem',
+                background: 'linear-gradient(135deg, rgba(139,92,246,.25) 0%, rgba(99,102,241,.25) 100%)',
+                border: '1px solid rgba(139,92,246,.45)',
+                color: '#c4b5fd',
+                boxShadow: '0 0 15px rgba(139, 92, 246, 0.2)',
+              }}
+            >
+              <Sparkles size={16} />
+              Agent Copilot
+            </button>
+          )}
           {user?.role !== UserRole.USER && (ticket.status === 'OPEN' || ticket.status === 'IN_PROGRESS') && (
             <button 
               className="td-action-btn td-auto-btn" 
@@ -354,12 +397,12 @@ const TicketDetails: React.FC = () => {
             )}
           </div>
 
-          {/* Activity / Messages (Mock for now) */}
+          {/* Activity / Messages */}
           <div className="td-glass" style={{ borderRadius: 24, padding: '2rem' }}>
             <h3 style={{ fontSize: '.72rem', fontWeight: 700, color: 'rgba(255,255,255,.28)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-              <MessageSquare size={14} /> Activity Stream
+              <MessageSquare size={14} /> Fil d'échanges & Historique
             </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(139,92,246,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa', flexShrink: 0 }}>
                   <Bot size={16} />
@@ -369,14 +412,44 @@ const TicketDetails: React.FC = () => {
                     <span style={{ fontSize: '.8125rem', fontWeight: 700, color: '#f1f5f9' }}>GEISER AI</span>
                     <span style={{ fontSize: '.65rem', color: 'rgba(255,255,255,.2)' }}>{format(new Date(ticket.created_at), 'HH:mm')}</span>
                   </div>
-                  <p style={{ margin: 0, fontSize: '.875rem', color: 'rgba(255,255,255,.5)', lineHeight: 1.5 }}>Ticket initialized and awaiting manual review or auto-routing triggers.</p>
+                  <p style={{ margin: 0, fontSize: '.875rem', color: 'rgba(255,255,255,.5)', lineHeight: 1.5 }}>Ticket initialisé et journalisé dans le système.</p>
                 </div>
               </div>
+
+              {/* Dynamic responses */}
+              {ticket.responses && ticket.responses.map((resp, i) => (
+                <div key={resp.id || i} style={{ display: 'flex', gap: '1rem' }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: resp.role === 'ADMIN' ? 'rgba(236,72,153,.2)' : 'rgba(59,130,246,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: resp.role === 'ADMIN' ? '#f472b6' : '#60a5fa', flexShrink: 0 }}>
+                    <User size={16} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '.25rem' }}>
+                      <span style={{ fontSize: '.8125rem', fontWeight: 700, color: '#f1f5f9' }}>{resp.sender_name || 'Agent Support'}</span>
+                      {resp.created_at && (
+                        <span style={{ fontSize: '.65rem', color: 'rgba(255,255,255,.2)' }}>{format(new Date(resp.created_at), 'dd/MM HH:mm')}</span>
+                      )}
+                    </div>
+                    <p style={{ margin: 0, fontSize: '.875rem', color: 'rgba(255,255,255,.8)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{resp.content}</p>
+                  </div>
+                </div>
+              ))}
               
               {/* Message Input */}
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', padding: '1rem', borderRadius: 16, background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.05)' }}>
-                <input placeholder="Add a comment…" style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#f1f5f9', fontSize: '.875rem' }} />
-                <button style={{ background: 'none', border: 'none', color: '#8b5cf6', cursor: 'pointer' }}><Send size={18} /></button>
+                <input 
+                  placeholder="Rédiger un message ou utiliser le Copilot pour insérer des snippets…" 
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendComment(); } }}
+                  style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#f1f5f9', fontSize: '.875rem' }} 
+                />
+                <button 
+                  onClick={handleSendComment}
+                  disabled={isSendingComment || !commentText.trim()}
+                  style={{ background: 'none', border: 'none', color: '#8b5cf6', cursor: isSendingComment ? 'not-allowed' : 'pointer', opacity: commentText.trim() ? 1 : 0.4 }}
+                >
+                  {isSendingComment ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                </button>
               </div>
             </div>
           </div>
@@ -461,6 +534,16 @@ const TicketDetails: React.FC = () => {
 
         </div>
       </div>
+
+      {/* Agent Copilot Drawer */}
+      <AgentCopilotDrawer
+        isOpen={copilotOpen}
+        onClose={() => setCopilotOpen(false)}
+        ticketId={ticket.id}
+        onInsertSnippet={(snippet) => {
+          setCommentText((prev) => (prev ? `${prev}\n\n${snippet}` : snippet));
+        }}
+      />
     </div>
   );
 };

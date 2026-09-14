@@ -722,3 +722,130 @@ AttributeError: module 'bcrypt' has no attribute '__about__'
 2026-09-07 13:42:16,237 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
 2026-09-07 13:42:16,237 - apscheduler.scheduler - INFO - Scheduler started
 2026-09-07 13:42:16,237 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-07 13:57:16,240 - apscheduler.executors.default - INFO - Running job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-07 14:12:16 CEST)" (scheduled at 2026-09-07 13:57:16.234234+02:00)
+2026-09-07 13:57:16,400 - services.email_service - WARNING - SMTP not configured. Skipping email to bwalid819@gmail.com. Content:
+<h2 style='color:#dc2626'>SLA Dépassé</h2><p>Le ticket <b>#7D9BB4</b> a dépassé son accord de niveau de service.</p><p><b>Objet :</b> test<br/><b>Priorité :</b> URGENT<br/><b>Échéance SLA :</b> 02/09/2026 15:42</p><p>Action immédiate requise.</p>
+2026-09-07 13:57:16,400 - services.sla_service - INFO - SLA Scan complete: {'scanned': 6, 'at_risk': 0, 'breached': 1, 'alerted': 1}
+2026-09-07 13:57:16,401 - sla_monitor - INFO - SLA monitor scan: {'scanned': 6, 'at_risk': 0, 'breached': 1, 'alerted': 1}
+2026-09-07 13:57:16,401 - apscheduler.executors.default - INFO - Job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-07 14:12:16 CEST)" executed successfully
+2026-09-07 13:58:16,246 - root - INFO - Closing MongoDB connection...
+2026-09-07 13:58:16,247 - root - INFO - MongoDB connection closed!
+2026-09-07 13:58:16,247 - apscheduler.scheduler - INFO - Scheduler has been shut down
+2026-09-07 13:58:20,130 - root - INFO - Connecting to MongoDB...
+2026-09-07 13:58:20,160 - root - INFO - Connected to MongoDB!
+2026-09-07 13:58:20,717 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-07 13:58:20,768 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-07 13:58:20,778 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-07 13:58:20,807 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-07 13:58:20,853 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-07 13:58:20,860 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-07 13:58:20,864 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-07 13:58:20,866 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-14 21:08:27,069 - root - INFO - Connecting to MongoDB...
+2026-09-14 21:08:27,515 - root - INFO - Connected to MongoDB!
+2026-09-14 21:08:27,957 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-14 21:08:27,973 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-14 21:08:27,979 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-14 21:08:27,983 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-14 21:08:27,987 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-14 21:08:27,990 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-14 21:08:27,990 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-14 21:08:27,991 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-14 21:19:34,486 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 21:19:41,352 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 21:19:43,503 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 21:19:45,517 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 21:19:57,454 - root - INFO - Closing MongoDB connection...
+2026-09-14 21:19:57,457 - root - INFO - MongoDB connection closed!
+2026-09-14 21:19:57,458 - apscheduler.scheduler - INFO - Scheduler has been shut down
+2026-09-14 21:20:00,631 - root - INFO - Connecting to MongoDB...
+2026-09-14 21:20:00,654 - root - INFO - Connected to MongoDB!
+2026-09-14 21:20:01,015 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-14 21:20:01,023 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-14 21:20:01,029 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-14 21:20:01,034 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-14 21:20:01,036 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-14 21:20:01,038 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-14 21:20:01,038 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-14 21:20:01,039 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-14 21:20:10,569 - root - INFO - Closing MongoDB connection...
+2026-09-14 21:20:10,569 - root - INFO - MongoDB connection closed!
+2026-09-14 21:20:10,569 - apscheduler.scheduler - INFO - Scheduler has been shut down
+2026-09-14 21:20:13,311 - root - INFO - Connecting to MongoDB...
+2026-09-14 21:20:13,325 - root - INFO - Connected to MongoDB!
+2026-09-14 21:20:13,712 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-14 21:20:13,718 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-14 21:20:13,721 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-14 21:20:13,725 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-14 21:20:13,726 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-14 21:20:13,728 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-14 21:20:13,728 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-14 21:20:13,729 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-14 21:29:54,494 - root - INFO - Closing MongoDB connection...
+2026-09-14 21:29:54,494 - root - INFO - MongoDB connection closed!
+2026-09-14 21:29:54,495 - apscheduler.scheduler - INFO - Scheduler has been shut down
+2026-09-14 21:34:47,016 - root - INFO - Connecting to MongoDB...
+2026-09-14 21:34:47,028 - root - INFO - Connected to MongoDB!
+2026-09-14 21:34:47,435 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-14 21:34:47,440 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-14 21:34:47,443 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-14 21:34:47,447 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-14 21:34:47,447 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-14 21:34:47,448 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-14 21:34:47,450 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-14 21:34:47,450 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-14 21:49:47,450 - apscheduler.executors.default - INFO - Running job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-14 22:04:47 CEST)" (scheduled at 2026-09-14 21:49:47.447052+02:00)
+2026-09-14 21:49:47,469 - services.sla_service - INFO - SLA Scan complete: {'scanned': 6, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-14 21:49:47,469 - sla_monitor - INFO - SLA monitor scan: {'scanned': 6, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-14 21:49:47,469 - apscheduler.executors.default - INFO - Job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-14 22:04:47 CEST)" executed successfully
+2026-09-14 21:54:05,263 - root - INFO - Closing MongoDB connection...
+2026-09-14 21:54:05,265 - root - INFO - MongoDB connection closed!
+2026-09-14 21:54:05,265 - apscheduler.scheduler - INFO - Scheduler has been shut down
+2026-09-14 21:54:08,058 - root - INFO - Connecting to MongoDB...
+2026-09-14 21:54:08,074 - root - INFO - Connected to MongoDB!
+2026-09-14 21:54:08,457 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-14 21:54:08,462 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-14 21:54:08,466 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-14 21:54:08,468 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-14 21:54:08,469 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-14 21:54:08,471 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-14 21:54:08,471 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-14 21:54:08,471 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-14 21:57:05,785 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 21:57:07,922 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 21:57:14,890 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 21:57:21,245 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 21:57:30,247 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 21:57:32,512 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 21:57:34,446 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 21:57:36,052 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-14 22:03:05,212 - root - INFO - Closing MongoDB connection...
+2026-09-14 22:03:05,214 - root - INFO - MongoDB connection closed!
+2026-09-14 22:03:05,214 - apscheduler.scheduler - INFO - Scheduler has been shut down
+2026-09-14 22:03:08,108 - root - INFO - Connecting to MongoDB...
+2026-09-14 22:03:08,138 - root - INFO - Connected to MongoDB!
+2026-09-14 22:03:08,526 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-14 22:03:08,532 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-14 22:03:08,535 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-14 22:03:08,538 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-14 22:03:08,539 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-14 22:03:08,541 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-14 22:03:08,542 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-14 22:03:08,543 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-14 22:03:12,323 - root - INFO - Closing MongoDB connection...
+2026-09-14 22:03:12,324 - root - INFO - MongoDB connection closed!
+2026-09-14 22:03:12,324 - apscheduler.scheduler - INFO - Scheduler has been shut down
+2026-09-14 22:03:14,760 - root - INFO - Connecting to MongoDB...
+2026-09-14 22:03:14,775 - root - INFO - Connected to MongoDB!
+2026-09-14 22:03:15,162 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-14 22:03:15,168 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-14 22:03:15,171 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-14 22:03:15,172 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-14 22:03:15,173 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-14 22:03:15,174 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-14 22:03:15,174 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-14 22:03:15,175 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-14 22:18:15,174 - apscheduler.executors.default - INFO - Running job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-14 22:33:15 CEST)" (scheduled at 2026-09-14 22:18:15.172687+02:00)
+2026-09-14 22:18:15,183 - services.sla_service - INFO - SLA Scan complete: {'scanned': 6, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-14 22:18:15,184 - sla_monitor - INFO - SLA monitor scan: {'scanned': 6, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-14 22:18:15,184 - apscheduler.executors.default - INFO - Job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-14 22:33:15 CEST)" executed successfully
