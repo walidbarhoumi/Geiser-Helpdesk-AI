@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from routes import auth, users, tickets, agents, teams, ai, chat, sla, email, analytics
+from routes import auth, users, tickets, agents, teams, ai, chat, sla, email, analytics, rag
 
 api_router = APIRouter()
 
@@ -13,5 +13,7 @@ api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(sla.router, prefix="/sla", tags=["sla"])
 api_router.include_router(email.router, prefix="/email", tags=["email"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+api_router.include_router(rag.router, prefix="/rag", tags=["rag"])
+
 
 

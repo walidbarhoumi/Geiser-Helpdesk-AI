@@ -12,6 +12,7 @@ from schemas.schemas import (
     TicketChannel, TicketStatus
 )
 from models.base import MongoModel
+from services.ai.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
 
@@ -39,32 +40,89 @@ class ChatbotService:
         self.db = db
         self.ollama = OllamaService()
         self.classifier = AIClassifier(self.ollama)
+        self.rag_service = RAGService()
         self.knowledge_base = db.knowledge_base
         self.chat_history = db.chat_sessions
 
     async def process_chat_message(self, messages: List[ChatMessage], user_id: str) -> ChatResponse:
         """
-        Processes a chat conversation:
-        1. Checks Knowledge Base for exact/keyword matches.
-        2. Queries Ollama local LLM with conversation context.
-        3. Returns structured response with suggestions and escalation capability.
+        Processes a chat conversation with RAG (Retrieval-Augmented Generation):
+        1. Queries FAISS vector index using Sentence Transformers on user query.
+        2. If relevant support conversations/SOPs found, feeds augmented context to local LLM.
+        3. Falls back to standard LLM or direct validated procedure if LLM unavailable.
         """
         if not messages:
             return ChatResponse(
-                reply="Bonjour ! Je suis l'assistant IA de GEISER. Comment puis-je vous aider aujourd'hui ?",
+                reply="Bonjour ! Je suis GEISER Support IA, disponible 24/7 pour votre assistance informatique. Décrivez-moi votre problème technique.",
                 suggested_actions=["🔑 Mot de passe oublié", "🌐 Problème de connexion VPN", "💻 PC Lent", "🎫 Statut de mes tickets"],
                 can_escalate=False,
                 source="fallback"
             )
 
         latest_user_message = next((m.content for m in reversed(messages) if m.role == "user"), "")
-        clean_text = latest_user_message.strip().lower()
+        clean_text = latest_user_message.strip()
 
-        # ── 1. Knowledge Base Check ──────────────────────────────
+        # ── 1. Retrieval : Recherche vectorielle sémantique FAISS ───────────
+        rag_results = self.rag_service.search_knowledge(clean_text)
+
+        # Construction du fil de conversation récent
+        conversation_context = ""
+        for msg in messages[-4:]:
+            role_label = "Utilisateur" if msg.role == "user" else "Assistant"
+            conversation_context += f"{role_label}: {msg.content}\n"
+
+        # ── 2. Génération Augmentée RAG ────────────────────────────────────
+        if rag_results:
+            top_result = rag_results[0]
+            sys_prompt, augmented_prompt = self.rag_service.prepare_augmented_prompt(
+                user_query=clean_text,
+                conversation_history=conversation_context,
+                results=rag_results
+            )
+
+            llm_reply = await self.ollama.generate_response(augmented_prompt, sys_prompt)
+
+            suggested_actions = [
+                "✅ Mon problème est résolu",
+                "🎫 Créer un ticket avec ce diagnostic",
+                "👨‍💻 Contacter un technicien humain"
+            ]
+            if top_result.sop:
+                suggested_actions.insert(0, f"📋 Appliquer {top_result.sop}")
+
+            if llm_reply and len(llm_reply.strip()) > 15:
+                return ChatResponse(
+                    reply=llm_reply,
+                    suggested_actions=suggested_actions[:3],
+                    can_escalate=True,
+                    intent=top_result.intent or "TECHNICAL_SUPPORT",
+                    confidence_score=top_result.score,
+                    source="rag"
+                )
+            else:
+                # Fallback déterministe basé sur la solution éprouvée RAG si le LLM ne répond pas
+                direct_solution = top_result.last_assistant_solution or "Veuillez vérifier vos accès ou redémarrer le service concerné."
+                sop_text = f" (Procédure de référence : {top_result.sop})" if top_result.sop else ""
+                fallback_rag_reply = (
+                    f"🔍 **Diagnostic (Base de connaissances GEISER)** : Problème identifié lié à `{top_result.intent}`{sop_text}.\n\n"
+                    f"🛠️ **Procédure recommandée** :\n{direct_solution}\n\n"
+                    "Si le dysfonctionnement persiste, vous pouvez immédiatement créer un ticket pour prise en charge par notre équipe technique."
+                )
+                return ChatResponse(
+                    reply=fallback_rag_reply,
+                    suggested_actions=suggested_actions[:3],
+                    can_escalate=True,
+                    intent=top_result.intent,
+                    confidence_score=top_result.score,
+                    source="rag"
+                )
+
+        # ── 3. Recherche par mots-clés dans la base Mongo (KBase existante) ──
+        clean_text_lower = clean_text.lower()
         kb_items = await self.knowledge_base.find().to_list(100)
         for item in kb_items:
             keywords = [k.lower() for k in item.get("keywords", [])]
-            if any(k in clean_text for k in keywords if len(k) > 2):
+            if any(k in clean_text_lower for k in keywords if len(k) > 2):
                 suggestions = item.get("suggestions", [
                     "Est-ce que cette solution a résolu votre problème ?",
                     "Créer un ticket avec ce diagnostic"
@@ -74,48 +132,45 @@ class ChatbotService:
                     suggested_actions=suggestions,
                     can_escalate=True,
                     intent=item.get("category", "KNOWLEDGE_BASE"),
-                    confidence_score=0.95,
+                    confidence_score=0.90,
                     source="knowledge_base"
                 )
 
-        # ── 2. Local LLM Generation via Ollama ────────────────────
-        conversation_context = ""
-        for msg in messages[-5:]:
-            role_label = "Utilisateur" if msg.role == "user" else "Assistant"
-            conversation_context += f"{role_label}: {msg.content}\n"
-
-        prompt = f"""Historique de la conversation :
+        # ── 4. Requête LLM standard (Cas général sans correspondance RAG) ────
+        fallback_prompt = f"""Historique de la conversation :
 {conversation_context}
 
-Génère la réponse de l'Assistant GEISER Bot pour aider l'utilisateur :"""
+Question de l'utilisateur : {clean_text}
 
-        llm_reply = await self.ollama.generate_response(prompt, SYSTEM_PROMPT)
+Consignes strictes :
+- Réponds en français de façon concise et structurée.
+- Si le problème n'est pas identifié avec certitude, pose une question de clarification.
+- N'invente AUCUNE fausse procédure ou faux numéro de ticket.
+- Invite l'utilisateur à créer un ticket officiel si le problème requiert un technicien."""
+
+        llm_reply = await self.ollama.generate_response(fallback_prompt, SYSTEM_PROMPT)
 
         if llm_reply and len(llm_reply.strip()) > 10:
-            classification = await self.classifier.classify_intent("Chat Inquiry", latest_user_message)
+            classification = await self.classifier.classify_intent("Chat Inquiry", clean_text)
             intent = classification.get("intent", "GENERAL")
-            
-            suggested_actions = [
-                "Créer un ticket de support",
-                "J'ai besoin d'une assistance humaine",
-                "Mon problème est résolu, merci"
-            ]
-
             return ChatResponse(
                 reply=llm_reply,
-                suggested_actions=suggested_actions,
+                suggested_actions=[
+                    "Créer un ticket de support",
+                    "J'ai besoin d'une assistance humaine",
+                    "Mon problème est résolu, merci"
+                ],
                 can_escalate=True,
                 intent=intent,
-                confidence_score=0.88,
+                confidence_score=0.65,
                 source="llm"
             )
 
-        # ── 3. Fallback when LLM is unavailable ──────────────────
+        # ── 5. Fallback final de sécurité ──────────────────────────────────
         return ChatResponse(
             reply=(
-                "J'ai bien pris note de votre message. Notre moteur de support IA analyse votre demande. "
-                "Si votre problème persiste ou nécessite l'intervention d'un technicien GEISER, "
-                "vous pouvez directement escalader cet échange en ticket de support."
+                "J'ai bien pris note de votre message. Notre moteur de support IA n'a pas trouvé de procédure automatisée correspondante.\n\n"
+                "Pour une prise en charge rapide par notre équipe informatique, veuillez cliquer sur **Créer un ticket** ci-dessous."
             ),
             suggested_actions=[
                 "Créer un ticket de support",
@@ -124,7 +179,7 @@ Génère la réponse de l'Assistant GEISER Bot pour aider l'utilisateur :"""
             ],
             can_escalate=True,
             intent="GENERAL",
-            confidence_score=0.6,
+            confidence_score=0.5,
             source="fallback"
         )
 

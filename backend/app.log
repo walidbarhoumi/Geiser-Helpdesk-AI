@@ -849,3 +849,72 @@ AttributeError: module 'bcrypt' has no attribute '__about__'
 2026-09-14 22:18:15,183 - services.sla_service - INFO - SLA Scan complete: {'scanned': 6, 'at_risk': 0, 'breached': 1, 'alerted': 0}
 2026-09-14 22:18:15,184 - sla_monitor - INFO - SLA monitor scan: {'scanned': 6, 'at_risk': 0, 'breached': 1, 'alerted': 0}
 2026-09-14 22:18:15,184 - apscheduler.executors.default - INFO - Job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-14 22:33:15 CEST)" executed successfully
+2026-09-15 15:47:10,247 - root - INFO - Connecting to MongoDB...
+2026-09-15 15:47:10,567 - root - INFO - Connected to MongoDB!
+2026-09-15 15:47:10,959 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-15 15:47:10,965 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-15 15:47:10,966 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-15 15:47:10,969 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-15 15:47:10,970 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-15 15:47:10,971 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-15 15:47:10,971 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-15 15:47:10,971 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-15 15:58:15,078 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 15:58:16,884 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 15:58:33,161 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 15:58:33,183 - services.email_service - WARNING - SMTP not configured. Skipping email to bwalid819@gmail.com. Content:
+<p>Your ticket <b>#EB4B2F</b> has been received and is currently in status: <b>OPEN</b>.</p>
+2026-09-15 15:58:35,158 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 15:58:35,162 - services.routing_service - INFO - AI Analysis success for ticket 6aa94f09047008ccb9eb4b2f. Keywords: ['access', 'password', 'reset', 'authentication', 'login']
+2026-09-15 16:02:10,974 - apscheduler.executors.default - INFO - Running job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-15 16:17:10 CEST)" (scheduled at 2026-09-15 16:02:10.969365+02:00)
+2026-09-15 16:02:10,983 - services.sla_service - INFO - SLA Scan complete: {'scanned': 7, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-15 16:02:10,983 - sla_monitor - INFO - SLA monitor scan: {'scanned': 7, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-15 16:02:10,983 - apscheduler.executors.default - INFO - Job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-15 16:17:10 CEST)" executed successfully
+2026-09-15 16:03:13,763 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:03:15,805 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:03:19,423 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:03:21,216 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:04:21,957 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:04:23,690 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:04:27,524 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:04:29,195 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:04:32,536 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:04:34,095 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:04:37,012 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:04:38,627 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:08:44,891 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:08:46,806 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:08:50,203 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:08:52,003 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:17:10,971 - apscheduler.executors.default - INFO - Running job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-15 16:32:10 CEST)" (scheduled at 2026-09-15 16:17:10.969365+02:00)
+2026-09-15 16:17:10,980 - services.sla_service - INFO - SLA Scan complete: {'scanned': 7, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-15 16:17:10,980 - sla_monitor - INFO - SLA monitor scan: {'scanned': 7, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-15 16:17:10,980 - apscheduler.executors.default - INFO - Job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-15 16:32:10 CEST)" executed successfully
+2026-09-15 16:20:41,191 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:20:43,004 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:20:46,249 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:20:47,973 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+2026-09-15 16:32:10,982 - apscheduler.executors.default - INFO - Running job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-15 16:47:10 CEST)" (scheduled at 2026-09-15 16:32:10.969365+02:00)
+2026-09-15 16:32:10,992 - services.sla_service - INFO - SLA Scan complete: {'scanned': 7, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-15 16:32:10,992 - sla_monitor - INFO - SLA monitor scan: {'scanned': 7, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-15 16:32:10,992 - apscheduler.executors.default - INFO - Job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-15 16:47:10 CEST)" executed successfully
+2026-09-15 16:47:10,982 - apscheduler.executors.default - INFO - Running job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-15 17:02:10 CEST)" (scheduled at 2026-09-15 16:47:10.969365+02:00)
+2026-09-15 16:47:11,036 - services.sla_service - INFO - SLA Scan complete: {'scanned': 7, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-15 16:47:11,036 - sla_monitor - INFO - SLA monitor scan: {'scanned': 7, 'at_risk': 0, 'breached': 1, 'alerted': 0}
+2026-09-15 16:47:11,036 - apscheduler.executors.default - INFO - Job "run_sla_scan (trigger: interval[0:15:00], next run at: 2026-09-15 17:02:10 CEST)" executed successfully
+2026-09-15 16:56:35,559 - root - INFO - Closing MongoDB connection...
+2026-09-15 16:56:35,562 - root - INFO - MongoDB connection closed!
+2026-09-15 16:56:35,562 - apscheduler.scheduler - INFO - Scheduler has been shut down
+2026-09-15 16:56:37,940 - root - INFO - Connecting to MongoDB...
+2026-09-15 16:56:38,312 - root - INFO - Connected to MongoDB!
+2026-09-15 16:56:38,658 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-09-15 16:56:38,661 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/ps "HTTP/1.1 200 OK"
+2026-09-15 16:56:38,662 - main - INFO - AI Engine started: Model 'gemma3:4b' is ready.
+2026-09-15 16:56:38,664 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-15 16:56:38,665 - main - INFO - Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)
+2026-09-15 16:56:38,666 - apscheduler.scheduler - INFO - Added job "run_sla_scan" to job store "default"
+2026-09-15 16:56:38,667 - apscheduler.scheduler - INFO - Scheduler started
+2026-09-15 16:56:38,667 - main - INFO - SLA monitor scheduled (every 15 minutes)
+2026-09-15 17:04:18,867 - root - INFO - Closing MongoDB connection...
+2026-09-15 17:04:18,868 - root - INFO - MongoDB connection closed!
+2026-09-15 17:04:18,868 - apscheduler.scheduler - INFO - Scheduler has been shut down

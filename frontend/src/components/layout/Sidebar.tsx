@@ -6,6 +6,7 @@ import {
   Users,
   ShieldCheck,
   UserCircle,
+  Database,
   LogOut,
   Plus,
   ChevronDown,
@@ -69,6 +70,12 @@ const Sidebar: React.FC = () => {
         { to: '/teams', label: 'All Teams' },
         { to: '/teams/create', label: 'Create Team' },
       ],
+    },
+    {
+      to: '/rag',
+      icon: <Database size={18} />,
+      label: 'RAG Explorer',
+      roles: [UserRole.AGENT, UserRole.ADMIN],
     },
     {
       to: '/profile',

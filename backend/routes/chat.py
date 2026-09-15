@@ -98,3 +98,37 @@ async def escalate_chat_to_ticket(
         )
 
 
+@router.post("/reindex")
+async def reindex_rag_knowledge_base(
+    current_user=Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """
+    Reconstruit l'index vectoriel FAISS et recharge le fichier source JSONL.
+    Accessible aux administrateurs et agents de support.
+    """
+    role = str(current_user.get("role", "")).upper()
+    if role not in ["ADMIN", "SUPERADMIN", "AGENT"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Action réservée aux administrateurs et agents de support."
+        )
+
+    import asyncio
+    chatbot_service = ChatbotService(db)
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, chatbot_service.rag_service.reindex)
+        return {
+            "message": "Réindexation RAG réussie avec succès",
+            "details": result
+        }
+    except Exception as e:
+        logger.error(f"Erreur lors de la réindexation RAG : {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Échec de la réindexation RAG : {str(e)}"
+        )
+
+
+

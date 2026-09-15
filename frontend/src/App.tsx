@@ -28,6 +28,7 @@ import TeamCreate from './pages/teams/TeamCreate';
 import UserList from './pages/users/UserList';
 import Profile from './pages/profile/Profile';
 import SLADashboard from './pages/sla/SLADashboard';
+import RAGDashboard from './pages/rag/RAGDashboard';
 
 import { UserRole } from './types';
 import { SupportChatbot } from './components/chat/SupportChatbot';
@@ -246,17 +247,18 @@ const Sidebar: React.FC = () => {
     {
       label: 'Workspace',
       items: [
-        { to: '/',        icon: <LayoutDashboard size={17} />, label: 'Dashboard' },
-        
+        { to: '/', icon: <LayoutDashboard size={17} />, label: 'Dashboard' },
+
       ]
     },
     ...(user?.role === UserRole.ADMIN || user?.role === UserRole.AGENT ? [{
       label: 'Operations',
       items: [
-        { to: '/teams',  icon: <Users size={17} />, label: 'Teams'  },
-        { to: '/agents', icon: <Bot   size={17} />, label: 'Agents' },
-        { to: '/tickets', icon: <Ticket size={17} />, label: 'Tickets'   },
-        { to: '/sla',    icon: <Timer size={17} />, label: 'SLA Monitor' },
+        { to: '/teams', icon: <Users size={17} />, label: 'Teams' },
+        { to: '/agents', icon: <Bot size={17} />, label: 'Agents' },
+        { to: '/tickets', icon: <Ticket size={17} />, label: 'Tickets' },
+        { to: '/sla', icon: <Timer size={17} />, label: 'SLA Monitor' },
+        { to: '/rag', icon: <Activity size={17} />, label: 'RAG Explorer' },
       ]
     }] : []),
     ...(user?.role === UserRole.ADMIN ? [{
@@ -689,19 +691,19 @@ const App: React.FC = () => {
       <AuthProvider>
         <CustomToaster />
         <Routes>
-          <Route path="/login"           element={<Login />} />
-          <Route path="/register"        element={<Register />} />
-          <Route path="/verify-2fa"      element={<Verify2FA />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/verify-2fa" element={<Verify2FA />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password"  element={<ResetPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-            <Route path="/"               element={<Dashboard />} />
-            <Route path="/tickets"        element={<TicketList />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/tickets" element={<TicketList />} />
             <Route path="/tickets/create" element={<TicketCreate />} />
-            <Route path="/tickets/:id"    element={<TicketDetails />} />
-            <Route path="/sla"            element={<SLADashboard />} />
-            <Route path="/profile"        element={<Profile />} />
+            <Route path="/tickets/:id" element={<TicketDetails />} />
+            <Route path="/sla" element={<SLADashboard />} />
+            <Route path="/profile" element={<Profile />} />
 
             <Route path="/users" element={
               <ProtectedRoute roles={[UserRole.ADMIN]}><UserList /></ProtectedRoute>
@@ -717,6 +719,9 @@ const App: React.FC = () => {
             } />
             <Route path="/teams/create" element={
               <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN]}><TeamCreate /></ProtectedRoute>
+            } />
+            <Route path="/rag" element={
+              <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN]}><RAGDashboard /></ProtectedRoute>
             } />
           </Route>
 

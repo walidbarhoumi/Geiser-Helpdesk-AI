@@ -11,3 +11,12 @@ httpx
 apscheduler
 pytest
 pytest-asyncio
+faiss-cpu
+sentence-transformers
+numpy
+langchain
+langchain-community
+langchain-text-splitters
+pypdf
+reportlab
+xlsxwriter

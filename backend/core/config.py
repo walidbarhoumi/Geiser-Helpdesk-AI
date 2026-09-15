@@ -43,6 +43,19 @@ class Settings(BaseSettings):
     OLLAMA_URL: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 
+    # RAG / FAISS Knowledge Base
+    RAG_DATABASE_PATH: str = os.getenv(
+        "RAG_DATABASE_PATH",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "Database", "Chatbot First Database.txt"))
+    )
+    RAG_EMBEDDING_MODEL: str = os.getenv("RAG_EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+    RAG_INDEX_DIR: str = os.getenv(
+        "RAG_INDEX_DIR",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "storage", "faiss"))
+    )
+    RAG_TOP_K: int = int(os.getenv("RAG_TOP_K", "3"))
+    RAG_SCORE_THRESHOLD: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.30"))
+
     class Config:
         case_sensitive = True
 
