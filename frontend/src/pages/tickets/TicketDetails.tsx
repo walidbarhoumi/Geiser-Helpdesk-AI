@@ -477,6 +477,26 @@ const TicketDetails: React.FC = () => {
                 <div style={{ fontSize: '.65rem', color: 'rgba(255,255,255,.25)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '.25rem' }}>Channel</div>
                 <div style={{ fontSize: '.875rem', color: '#f1f5f9', fontWeight: 600 }}>{ticket.channel}</div>
               </div>
+              {ticket.impact && (
+                <div>
+                  <div style={{ fontSize: '.65rem', color: 'rgba(255,255,255,.25)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '.25rem' }}>ITIL Impact</div>
+                  <div style={{ fontSize: '.875rem', color: '#c4b5fd', fontWeight: 600 }}>{ticket.impact}</div>
+                </div>
+              )}
+              {ticket.urgency && (
+                <div>
+                  <div style={{ fontSize: '.65rem', color: 'rgba(255,255,255,.25)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '.25rem' }}>ITIL Urgence</div>
+                  <div style={{ fontSize: '.875rem', color: '#93c5fd', fontWeight: 600 }}>{ticket.urgency}</div>
+                </div>
+              )}
+              {ticket.priority_source && (
+                <div>
+                  <div style={{ fontSize: '.65rem', color: 'rgba(255,255,255,.25)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '.25rem' }}>Source Priorité</div>
+                  <div style={{ fontSize: '.875rem', color: '#86efac', fontWeight: 600 }}>
+                    {ticket.priority_source === 'itil_matrix' ? 'Matrice ITIL' : ticket.priority_source === 'ai' ? 'Classification IA' : 'Manuel'}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

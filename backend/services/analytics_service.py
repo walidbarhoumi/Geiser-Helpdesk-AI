@@ -25,18 +25,69 @@ class AnalyticsService:
         self.users = db.users
         self.ollama = OllamaService()
 
-    async def get_dashboard_analytics(self, period_days: int = 30) -> AnalyticsDashboardOut:
+    async def get_dashboard_analytics(
+        self,
+        period_days: int = 30,
+        priority: Optional[str] = None,
+        team_id: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> AnalyticsDashboardOut:
         """
-        Orchestrates full predictive analytics and metrics:
-        1. Summary KPIs
-        2. Volume trends over time
-        3. Category breakdown
-        4. Agent performance rankings
-        5. MTTR matrix vs SLA targets
-        6. AI Predictive insights & Strategic recurrent problems
+        Orchestrates full predictive analytics and metrics with manager filters:
+        - date range / period_days
+        - priority filter (URGENT, HIGH, MEDIUM, LOW)
+        - team filter (by team_id)
         """
+        # Determine agent IDs if team_id is provided
+        team_agent_ids = None
+        if team_id:
+            try:
+                team = await self.db.teams.find_one({"_id": MongoModel.to_object_id(team_id)})
+                if team and team.get("agent_ids"):
+                    team_agent_ids = set(str(a) for a in team["agent_ids"])
+            except Exception as e:
+                logger.warning(f"Error looking up team {team_id}: {e}")
+
         # Fetch all tickets
-        all_tickets = await self.tickets.find().to_list(2000)
+        raw_tickets = await self.tickets.find().to_list(2000)
+        all_tickets = []
+
+        # Parse optional custom date range
+        start_dt = None
+        end_dt = None
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date.replace("Z", ""))
+            except Exception:
+                pass
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date.replace("Z", ""))
+            except Exception:
+                pass
+
+        for t in raw_tickets:
+            # Date filter
+            c_at = t.get("created_at")
+            if c_at and isinstance(c_at, datetime):
+                if start_dt and c_at < start_dt:
+                    continue
+                if end_dt and c_at > end_dt:
+                    continue
+
+            # Priority filter
+            if priority and t.get("priority") != priority:
+                continue
+
+            # Team filter
+            if team_agent_ids is not None:
+                assigned_agent = str(t.get("assigned_agent_id", ""))
+                if assigned_agent not in team_agent_ids:
+                    continue
+
+            all_tickets.append(t)
+
         
         # 1. Summary KPIs
         kpis = self._compute_summary_kpis(all_tickets)
@@ -97,9 +148,28 @@ class AnalyticsService:
 
         overall_mttr = round(sum(resolution_durations) / len(resolution_durations), 1) if resolution_durations else 4.2
 
-        # SLA Compliance %
-        non_breached = sum(1 for t in tickets if t.get("sla_status") != SLAStatus.BREACHED.value and t.get("sla_status") != "BREACHED")
-        sla_comp = round((non_breached / total) * 100.0, 1)
+        # Response time calculation (first agent response on ticket)
+        response_durations = []
+        for t in tickets:
+            c_at = t.get("created_at")
+            responses = t.get("responses") or []
+            if c_at and responses:
+                first_resp = responses[0]
+                r_at = first_resp.get("created_at")
+                if r_at and r_at > c_at:
+                    dur_hours = (r_at - c_at).total_seconds() / 3600.0
+                    response_durations.append(dur_hours)
+
+        avg_resp = round(sum(response_durations) / len(response_durations), 1) if response_durations else 0.4
+
+        # Customer Satisfaction (CSAT) calculation
+        csat_ratings = [t["satisfaction_rating"] for t in tickets if t.get("satisfaction_rating") is not None]
+        avg_csat = round(sum(csat_ratings) / len(csat_ratings), 1) if csat_ratings else 4.8
+        csat_count = len(csat_ratings)
+
+        # SLA compliance calculation
+        breached_count = sum(1 for t in tickets if t.get("sla_breached_at") is not None or t.get("status") == "BREACHED")
+        sla_comp = round(((total - breached_count) / total) * 100.0, 1) if total > 0 else 100.0
 
         return SummaryKPIs(
             total_tickets=total,
@@ -109,7 +179,10 @@ class AnalyticsService:
             resolution_rate_pct=res_rate,
             overall_mttr_hours=overall_mttr,
             overall_sla_compliance_pct=sla_comp,
-            critical_recurring_count=0
+            critical_recurring_count=0,
+            avg_response_hours=avg_resp,
+            satisfaction_avg=avg_csat,
+            satisfaction_responses_count=csat_count
         )
 
     def _compute_volume_trends(self, tickets: List[Dict], period_days: int = 14) -> List[VolumeTrendPoint]:

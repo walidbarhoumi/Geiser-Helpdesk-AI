@@ -3,24 +3,66 @@ import { Link } from 'react-router-dom';
 import {
   Users, CheckCircle2, Clock,
   AlertTriangle, Sparkles, RefreshCw,
-
   ShieldCheck, Loader2, Award, Zap,
-  BarChart3, ChevronRight, Layers, ArrowUpRight
+  BarChart3, ChevronRight, Layers, ArrowUpRight,
+  FileSpreadsheet, FileText, Filter,
+  Star, MessageSquare
 } from 'lucide-react';
 import api from '../../api/axios';
 import { type AnalyticsDashboardData, TicketPriority } from '../../types';
 import toast from 'react-hot-toast';
 
+interface TeamOption {
+  id: string;
+  name: string;
+}
+
 const Dashboard: React.FC = () => {
   const [data, setData] = useState<AnalyticsDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exportingType, setExportingType] = useState<'pdf' | 'excel' | null>(null);
+  
+  // Manager Filters
   const [periodDays, setPeriodDays] = useState<number>(30);
+  const [selectedPriority, setSelectedPriority] = useState<string>('');
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [showFilters, setShowFilters] = useState<boolean>(false);
+
+  const [teams, setTeams] = useState<TeamOption[]>([]);
   const [hoveredBarIndex, setHoveredBarIndex] = useState<number | null>(null);
+
+  // Fetch available teams for filter dropdown
+  useEffect(() => {
+    const loadTeams = async () => {
+      try {
+        const res = await api.get('/teams');
+        if (Array.isArray(res.data)) {
+          setTeams(res.data.map((t: any) => ({ id: t.id || t._id, name: t.name })));
+        }
+      } catch (err) {
+        console.warn('Could not load teams for filter', err);
+      }
+    };
+    loadTeams();
+  }, []);
+
+  const buildQueryParams = useCallback(() => {
+    const params = new URLSearchParams();
+    params.append('period_days', periodDays.toString());
+    if (selectedPriority) params.append('priority', selectedPriority);
+    if (selectedTeamId) params.append('team_id', selectedTeamId);
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    return params.toString();
+  }, [periodDays, selectedPriority, selectedTeamId, startDate, endDate]);
 
   const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get<AnalyticsDashboardData>(`/analytics/dashboard?period_days=${periodDays}`);
+      const qs = buildQueryParams();
+      const res = await api.get<AnalyticsDashboardData>(`/analytics/dashboard?${qs}`);
       setData(res.data);
     } catch (err) {
       console.error('Failed to load analytics dashboard', err);
@@ -28,11 +70,54 @@ const Dashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [periodDays]);
+  }, [buildQueryParams]);
 
   useEffect(() => {
     fetchAnalytics();
   }, [fetchAnalytics]);
+
+  const handleExport = async (format: 'pdf' | 'excel') => {
+    setExportingType(format);
+    try {
+      const qs = buildQueryParams();
+      const endpoint = format === 'pdf' ? `/analytics/export/pdf?${qs}` : `/analytics/export/excel?${qs}`;
+      const response = await api.get(endpoint, { responseType: 'blob' });
+      
+      // Trigger browser download
+      const blob = new Blob([response.data], {
+        type: format === 'pdf' 
+          ? 'application/pdf' 
+          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute(
+        'download', 
+        `Rapport_GEISER_${format.toUpperCase()}_${new Date().toISOString().slice(0, 10)}.${format === 'pdf' ? 'pdf' : 'xlsx'}`
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`Rapport ${format.toUpperCase()} exporté avec succès !`);
+    } catch (err) {
+      console.error(`Export ${format} error`, err);
+      toast.error(`Échec de la génération du rapport ${format.toUpperCase()}`);
+    } finally {
+      setExportingType(null);
+    }
+  };
+
+  const resetFilters = () => {
+    setSelectedPriority('');
+    setSelectedTeamId('');
+    setStartDate('');
+    setEndDate('');
+    setPeriodDays(30);
+  };
+
+  const hasActiveFilters = Boolean(selectedPriority || selectedTeamId || startDate || endDate || periodDays !== 30);
 
   const maxVolume = data?.volume_trends?.length
     ? Math.max(...data.volume_trends.map(t => t.total_tickets), 1)
@@ -68,7 +153,7 @@ const Dashboard: React.FC = () => {
               color: 'rgba(167, 139, 250, 0.9)',
               letterSpacing: '0.08em', textTransform: 'uppercase'
             }}>
-              Intelligence Artificielle & Pilotage Helpdesk
+              Tableau de Bord Managérial & Rapports Stratégiques
             </span>
           </div>
           <h1 style={{
@@ -79,40 +164,92 @@ const Dashboard: React.FC = () => {
             letterSpacing: '-0.02em',
             color: '#fff'
           }}>
-            Analyse Prédictive <span style={{ fontStyle: 'italic', background: 'linear-gradient(135deg, #a78bfa, #ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>& Insights Stratégiques</span>
+            Supervision & <span style={{ fontStyle: 'italic', background: 'linear-gradient(135deg, #a78bfa, #ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Indicateurs Clés de Performance</span>
           </h1>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Period selector buttons */}
-          <div style={{
-            display: 'flex',
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(139, 92, 246, 0.2)',
-            borderRadius: '12px',
-            padding: '3px'
-          }}>
-            {[7, 14, 30].map(days => (
-              <button
-                key={days}
-                onClick={() => setPeriodDays(days)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '9px',
-                  border: 'none',
-                  background: periodDays === days ? 'rgba(139, 92, 246, 0.28)' : 'transparent',
-                  color: periodDays === days ? '#fff' : 'rgba(255, 255, 255, 0.5)',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.18s'
-                }}
-              >
-                {days}j
-              </button>
-            ))}
-          </div>
+        {/* Top action buttons: Exports & Filter Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          
+          {/* Export PDF */}
+          <button
+            onClick={() => handleExport('pdf')}
+            disabled={exportingType !== null}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              borderRadius: '12px',
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#fca5a5',
+              fontSize: '12.5px',
+              fontWeight: 600,
+              cursor: exportingType ? 'not-allowed' : 'pointer',
+              transition: 'all 0.18s'
+            }}
+          >
+            {exportingType === 'pdf' ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <FileText size={14} />
+            )}
+            <span>Export PDF</span>
+          </button>
 
+          {/* Export Excel */}
+          <button
+            onClick={() => handleExport('excel')}
+            disabled={exportingType !== null}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              borderRadius: '12px',
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              color: '#6ee7b7',
+              fontSize: '12.5px',
+              fontWeight: 600,
+              cursor: exportingType ? 'not-allowed' : 'pointer',
+              transition: 'all 0.18s'
+            }}
+          >
+            {exportingType === 'excel' ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <FileSpreadsheet size={14} />
+            )}
+            <span>Export Excel</span>
+          </button>
+
+          {/* Filter Toggle Button */}
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              borderRadius: '12px',
+              background: hasActiveFilters ? 'rgba(139, 92, 246, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+              border: `1px solid ${hasActiveFilters ? 'rgba(139, 92, 246, 0.5)' : 'rgba(255, 255, 255, 0.1)'}`,
+              color: hasActiveFilters ? '#c4b5fd' : 'rgba(255, 255, 255, 0.7)',
+              fontSize: '12.5px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <Filter size={14} />
+            <span>Filtres Managériaux</span>
+            {hasActiveFilters && (
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#a78bfa' }} />
+            )}
+          </button>
+
+          {/* Refresh Button */}
           <button
             onClick={fetchAnalytics}
             disabled={loading}
@@ -120,7 +257,7 @@ const Dashboard: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '8px 16px',
+              padding: '8px 14px',
               borderRadius: '12px',
               background: 'rgba(255, 255, 255, 0.04)',
               border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -131,23 +268,177 @@ const Dashboard: React.FC = () => {
             }}
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            {loading ? "Actualisation..." : "Actualiser"}
+            {loading ? "Calcul..." : "Actualiser"}
           </button>
         </div>
       </div>
+
+      {/* ── MANAGER FILTRATION CONSOLE ── */}
+      {showFilters && (
+        <div style={{
+          background: 'rgba(15, 15, 28, 0.85)',
+          border: '1px solid rgba(139, 92, 246, 0.3)',
+          borderRadius: '18px',
+          padding: '18px 22px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px',
+          backdropFilter: 'blur(20px)',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.4)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.06)', paddingBottom: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, color: '#c4b5fd' }}>
+              <Filter size={15} /> Paramètres de Filtrage Multidimensionnel
+            </div>
+            {hasActiveFilters && (
+              <button
+                onClick={resetFilters}
+                style={{ background: 'none', border: 'none', color: '#f87171', fontSize: '11.5px', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Réinitialiser tous les filtres
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px' }}>
+            
+            {/* 1. Quick Period */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', textTransform: 'uppercase' }}>
+                Horizon Temporel
+              </label>
+              <div style={{ display: 'flex', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '10px', padding: '3px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                {[7, 14, 30, 90].map(days => (
+                  <button
+                    key={days}
+                    onClick={() => setPeriodDays(days)}
+                    style={{
+                      flex: 1,
+                      padding: '6px 0',
+                      borderRadius: '7px',
+                      border: 'none',
+                      background: periodDays === days ? 'rgba(139, 92, 246, 0.35)' : 'transparent',
+                      color: periodDays === days ? '#fff' : 'rgba(255, 255, 255, 0.45)',
+                      fontSize: '11.5px',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {days}j
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 2. Priority Filter */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', textTransform: 'uppercase' }}>
+                Niveau de Priorité
+              </label>
+              <select
+                value={selectedPriority}
+                onChange={(e) => setSelectedPriority(e.target.value)}
+                style={{
+                  background: 'rgba(20, 20, 35, 0.9)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '10px',
+                  padding: '8px 12px',
+                  color: '#fff',
+                  fontSize: '12px',
+                  outline: 'none'
+                }}
+              >
+                <option value="">Toutes les priorités</option>
+                <option value="URGENT">Critique / Urgente (P1)</option>
+                <option value="HIGH">Haute (P2)</option>
+                <option value="MEDIUM">Moyenne (P3)</option>
+                <option value="LOW">Basse (P4)</option>
+              </select>
+            </div>
+
+            {/* 3. Team Filter */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', textTransform: 'uppercase' }}>
+                Équipe Support
+              </label>
+              <select
+                value={selectedTeamId}
+                onChange={(e) => setSelectedTeamId(e.target.value)}
+                style={{
+                  background: 'rgba(20, 20, 35, 0.9)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '10px',
+                  padding: '8px 12px',
+                  color: '#fff',
+                  fontSize: '12px',
+                  outline: 'none'
+                }}
+              >
+                <option value="">Toutes les équipes ({teams.length})</option>
+                {teams.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 4. Date Range Start */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', textTransform: 'uppercase' }}>
+                Date Début (Optionnel)
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                style={{
+                  background: 'rgba(20, 20, 35, 0.9)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '10px',
+                  padding: '7px 12px',
+                  color: '#fff',
+                  fontSize: '12px',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            {/* 5. Date Range End */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', textTransform: 'uppercase' }}>
+                Date Fin (Optionnel)
+              </label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                style={{
+                  background: 'rgba(20, 20, 35, 0.9)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '10px',
+                  padding: '7px 12px',
+                  color: '#fff',
+                  fontSize: '12px',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {loading && !data && (
         <div style={{ height: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '14px' }}>
           <Loader2 size={42} className="animate-spin" style={{ color: '#8b5cf6' }} />
           <span style={{ fontSize: '13.5px', color: 'rgba(255, 255, 255, 0.4)', fontWeight: 500 }}>
-            Calcul des métriques prédictives et agrégations temps réel...
+            Calcul des métriques consolidées et génération des tableaux...
           </span>
         </div>
       )}
 
       {data && (
         <>
-          {/* ── 1. SUMMARY KPIS GRID ── */}
+          {/* ── 1. CONSOLIDATED SUMMARY KPIS GRID ── */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
@@ -155,7 +446,7 @@ const Dashboard: React.FC = () => {
           }}>
             {[
               {
-                label: 'Total Tickets Enregistrés',
+                label: 'Total Tickets Filtrés',
                 value: data.kpis.total_tickets,
                 subtext: `${data.kpis.open_tickets} ouverts · ${data.kpis.in_progress_tickets} en cours`,
                 color: '#8b5cf6',
@@ -169,23 +460,37 @@ const Dashboard: React.FC = () => {
                 icon: <CheckCircle2 size={18} />
               },
               {
-                label: 'Temps Moyen de Résolution (MTTR)',
+                label: 'Temps Moyen Résolution (MTTR)',
                 value: `${data.kpis.overall_mttr_hours}h`,
-                subtext: `Moyenne sur l'ensemble des catégories`,
+                subtext: `Moyenne sur l'ensemble des tickets`,
                 color: '#38bdf8',
                 icon: <Clock size={18} />
               },
               {
+                label: 'Temps Moyen 1ère Réponse',
+                value: `${data.kpis.avg_response_hours ?? 0.4}h`,
+                subtext: `Prise en charge initiale par un agent`,
+                color: '#818cf8',
+                icon: <MessageSquare size={18} />
+              },
+              {
                 label: 'Respect Global des SLA',
                 value: `${data.kpis.overall_sla_compliance_pct}%`,
-                subtext: `Tickets traités dans les délais`,
+                subtext: `Engagements de service tenus`,
                 color: data.kpis.overall_sla_compliance_pct >= 90 ? '#34d399' : '#fbbf24',
                 icon: <ShieldCheck size={18} />
               },
               {
-                label: 'Problèmes Systémiques Détectés',
+                label: 'Satisfaction Client (CSAT)',
+                value: `${data.kpis.satisfaction_avg ?? 4.8} / 5`,
+                subtext: `${data.kpis.satisfaction_responses_count ?? 0} retours utilisateurs`,
+                color: '#fbbf24',
+                icon: <Star size={18} />
+              },
+              {
+                label: 'Clusters Récurrents Détectés',
                 value: data.kpis.critical_recurring_count,
-                subtext: `Clusters nécessitant action stratégique`,
+                subtext: `Causes racines à traiter en N3`,
                 color: data.kpis.critical_recurring_count > 0 ? '#f87171' : '#10b981',
                 icon: <AlertTriangle size={18} />
               },
@@ -205,7 +510,7 @@ const Dashboard: React.FC = () => {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.45)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.45)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     {kpi.label}
                   </span>
                   <div style={{
@@ -217,10 +522,10 @@ const Dashboard: React.FC = () => {
                     {kpi.icon}
                   </div>
                 </div>
-                <div style={{ fontSize: '1.9rem', fontWeight: 700, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+                <div style={{ fontSize: '1.85rem', fontWeight: 700, color: '#f8fafc', letterSpacing: '-0.02em' }}>
                   {kpi.value}
                 </div>
-                <div style={{ fontSize: '11.5px', color: 'rgba(255, 255, 255, 0.4)' }}>
+                <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)' }}>
                   {kpi.subtext}
                 </div>
               </div>
@@ -545,7 +850,7 @@ const Dashboard: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
-                  Temps Moyen de Résolution (MTTR) vs Cibles SLA
+                  Respect des Engagements de Service (SLA) & Temps de Résolution (MTTR)
                 </h3>
                 <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'rgba(255, 255, 255, 0.4)' }}>
                   Comparaison des délais constatés de clôture face aux seuils contractuels
@@ -617,7 +922,7 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* ── 5. PERFORMANCE OPÉRATIONNELLE DES AGENTS ── */}
+          {/* ── 5. TICKETS PAR AGENT & PERFORMANCE OPÉRATIONNELLE ── */}
           <div style={{
             background: 'rgba(15, 15, 28, 0.75)',
             border: '1px solid rgba(255, 255, 255, 0.07)',
@@ -633,10 +938,10 @@ const Dashboard: React.FC = () => {
                 <Users size={18} style={{ color: '#a78bfa' }} />
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
-                    Performance des Techniciens & Équipes Support
+                    Tickets par Agent & Performance Opérationnelle
                   </h3>
                   <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'rgba(255, 255, 255, 0.4)' }}>
-                    Volumes traités, MTTR individuel, respect des engagements et équilibrage de charge
+                    Volumes assignés, résolutions, délais MTTR individuels et taux de respect des SLA
                   </p>
                 </div>
               </div>
@@ -659,14 +964,14 @@ const Dashboard: React.FC = () => {
                     <th style={{ textAlign: 'center', padding: '10px 14px' }}>MTTR</th>
                     <th style={{ textAlign: 'center', padding: '10px 14px' }}>SLA %</th>
                     <th style={{ textAlign: 'center', padding: '10px 14px' }}>Charge</th>
-                    <th style={{ textAlign: 'center', padding: '10px 14px' }}>Évaluation IA</th>
+                    <th style={{ textAlign: 'center', padding: '10px 14px' }}>Évaluation</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.agent_performances.length === 0 ? (
                     <tr>
                       <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.4)' }}>
-                        Aucun agent enregistré dans le système.
+                        Aucun agent ne correspond aux filtres appliqués.
                       </td>
                     </tr>
                   ) : (

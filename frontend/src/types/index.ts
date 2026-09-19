@@ -21,6 +21,27 @@ export const TicketPriority = {
 } as const;
 export type TicketPriority = typeof TicketPriority[keyof typeof TicketPriority];
 
+export const ImpactLevel = {
+  LOW: "LOW",
+  MEDIUM: "MEDIUM",
+  HIGH: "HIGH",
+} as const;
+export type ImpactLevel = typeof ImpactLevel[keyof typeof ImpactLevel];
+
+export const UrgencyLevel = {
+  LOW: "LOW",
+  MEDIUM: "MEDIUM",
+  HIGH: "HIGH",
+} as const;
+export type UrgencyLevel = typeof UrgencyLevel[keyof typeof UrgencyLevel];
+
+export const PrioritySource = {
+  MANUAL: "manual",
+  AI: "ai",
+  ITIL_MATRIX: "itil_matrix",
+} as const;
+export type PrioritySource = typeof PrioritySource[keyof typeof PrioritySource];
+
 export const TicketChannel = {
   WEB: "WEB",
   EMAIL: "EMAIL",
@@ -71,6 +92,9 @@ export type Ticket = {
   category: string;
   subcategory?: string;
   priority: TicketPriority;
+  impact?: ImpactLevel;
+  urgency?: UrgencyLevel;
+  priority_source?: PrioritySource;
   channel: TicketChannel;
   status: TicketStatus;
   user_id: string;
@@ -254,6 +278,9 @@ export type SummaryKPIs = {
   overall_mttr_hours: number;
   overall_sla_compliance_pct: number;
   critical_recurring_count: number;
+  avg_response_hours?: number;
+  satisfaction_avg?: number;
+  satisfaction_responses_count?: number;
 };
 
 export type AnalyticsDashboardData = {
@@ -301,6 +328,16 @@ export type InternalDocItem = {
   relevance_score: number;
   source_type: "SOP_INTERNE" | "GUIDE_SECURITE_ISO27001" | "BASE_CONNAISSANCES" | string;
 };
+
+export type TicketClassificationResult = {
+  category: string;
+  subcategory: string;
+  priority: TicketPriority;
+  tags: string[];
+  confidence: number;
+  reasoning: string;
+};
+
 
 
 

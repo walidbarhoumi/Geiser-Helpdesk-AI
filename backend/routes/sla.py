@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime
 from typing import List
 from database.mongodb import get_database
 from core.deps import get_current_user, RoleChecker
 from schemas.schemas import (
     SLAPolicyOut, SLAPolicyUpdate, SLAAlertOut,
-    SLATicketDetailOut, SLAScanResult, UserRole, TicketPriority,
+    SLATicketDetailOut, SLAScanResult, SLACalculateRequest, SLACalculateResponse,
+    UserRole, TicketPriority,
 )
 from services.sla_service import SLAService
 
@@ -38,6 +40,36 @@ async def update_policy(
         "response_time_hours": policy["response_time_hours"],
         "resolution_time_hours": policy["resolution_time_hours"],
         "at_risk_threshold_pct": policy.get("at_risk_threshold_pct", 0.20),
+    }
+
+
+@router.post("/calculate", response_model=SLACalculateResponse)
+async def calculate_sla_preview(
+    body: SLACalculateRequest,
+    current_user=Depends(get_current_user),
+    db=Depends(get_database),
+):
+    """Preview or calculate SLA deadlines and applied rule for a given priority, category and subcategory."""
+    service = SLAService(db)
+    created_at = body.created_at or datetime.utcnow()
+    prio_str = body.priority.value if hasattr(body.priority, "value") else str(body.priority)
+    res = await service.calculate_ticket_sla(
+        priority=prio_str,
+        created_at=created_at,
+        category=body.category,
+        subcategory=body.subcategory
+    )
+    applied = res.get("applied_rule", {})
+    return {
+        "priority": body.priority,
+        "category": body.category,
+        "subcategory": body.subcategory,
+        "response_time_hours": res["response_time_hours"],
+        "resolution_time_hours": res["resolution_time_hours"],
+        "response_deadline": res["response_deadline"],
+        "resolution_deadline": res["resolution_deadline"],
+        "rule_level": applied.get("rule_level", "unknown"),
+        "applied_rule": applied,
     }
 
 

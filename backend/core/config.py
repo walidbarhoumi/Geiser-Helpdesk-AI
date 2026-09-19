@@ -17,15 +17,21 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
+    # Frontend & Reset Password
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    RESET_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("RESET_TOKEN_EXPIRE_MINUTES", "15"))
+
     # Uploads
     UPLOAD_DIR: str = "uploads"
     
     # SMTP / Email
-    SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
-    SMTP_USER: str = os.getenv("SMTP_USER", "")
-    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
-    FROM_EMAIL: str = os.getenv("FROM_EMAIL", "bwalid819@gmail.com")
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+
+    FROM_EMAIL: str = ""
 
     # IMAP / Inbound Email
     IMAP_ENABLED: bool = os.getenv("IMAP_ENABLED", "false").lower() in ("1", "true", "yes")
@@ -56,7 +62,16 @@ class Settings(BaseSettings):
     RAG_TOP_K: int = int(os.getenv("RAG_TOP_K", "3"))
     RAG_SCORE_THRESHOLD: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.30"))
 
+    # Twilio SMS Gateway
+    TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
+    TWILIO_AUTH_TOKEN: str = os.getenv("TWILIO_AUTH_TOKEN", "")
+    TWILIO_FROM_NUMBER: str = os.getenv("TWILIO_FROM_NUMBER", "")
+    TWILIO_TEST_TO_NUMBER: str = os.getenv("TWILIO_TEST_TO_NUMBER", "")
+
     class Config:
         case_sensitive = True
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        extra = "ignore"
 
 settings = Settings()

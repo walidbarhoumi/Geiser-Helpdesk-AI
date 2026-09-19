@@ -24,6 +24,24 @@ class TicketPriority(str, Enum):
     URGENT = "URGENT"
 
 
+class ImpactLevel(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
+class UrgencyLevel(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
+class PrioritySource(str, Enum):
+    MANUAL = "manual"
+    AI = "ai"
+    ITIL_MATRIX = "itil_matrix"
+
+
 class TicketChannel(str, Enum):
     WEB = "WEB"
     EMAIL = "EMAIL"
@@ -44,6 +62,7 @@ class SLAStatus(str, Enum):
 class UserBase(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
+    phone_number: Optional[str] = None
     role: UserRole = UserRole.USER
     is_active: bool = True
     two_factor_enabled: bool = False
@@ -56,6 +75,7 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     full_name: Optional[str] = None
+    phone_number: Optional[str] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
 
@@ -68,6 +88,7 @@ class UserOut(BaseModel):
     id: str
     email: EmailStr
     full_name: Optional[str] = None
+    phone_number: Optional[str] = None
     role: UserRole
     is_active: bool
     two_factor_enabled: bool = False
@@ -113,7 +134,7 @@ class ForgotPasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     token: str
-    new_password: str
+    new_password: str = Field(..., min_length=8, description="New password with minimum 8 characters")
 
 
 class TokenRefresh(BaseModel):
@@ -195,6 +216,9 @@ class TicketBase(BaseModel):
     category: str
     subcategory: Optional[str] = None
     priority: TicketPriority = TicketPriority.LOW
+    impact: Optional[ImpactLevel] = None
+    urgency: Optional[UrgencyLevel] = None
+    priority_source: Optional[PrioritySource] = None
     channel: TicketChannel = TicketChannel.WEB
     attachments: Optional[List[str]] = []
     keywords: Optional[List[str]] = []
@@ -213,6 +237,9 @@ class TicketUpdate(BaseModel):
     subcategory: Optional[str] = None
     status: Optional[TicketStatus] = None
     priority: Optional[TicketPriority] = None
+    impact: Optional[ImpactLevel] = None
+    urgency: Optional[UrgencyLevel] = None
+    priority_source: Optional[PrioritySource] = None
     assigned_agent_id: Optional[str] = None
     routing_reason: Optional[str] = None
     keywords: Optional[List[str]] = None
@@ -239,6 +266,26 @@ class AssignAgentRequest(BaseModel):
     agent_id: str
 
 
+class SubmitSatisfactionRequest(BaseModel):
+    """Request body for customer satisfaction rating (1-5) and optional comment."""
+    rating: int = Field(..., ge=1, le=5, description="Satisfaction score between 1 and 5")
+    comment: Optional[str] = None
+
+
+class PriorityCalculationRequest(BaseModel):
+    """Request body to preview ITIL priority from impact and urgency."""
+    impact: ImpactLevel
+    urgency: UrgencyLevel
+
+
+class PriorityCalculationResponse(BaseModel):
+    """Calculated ITIL priority response."""
+    impact: ImpactLevel
+    urgency: UrgencyLevel
+    priority: TicketPriority
+    source: PrioritySource = PrioritySource.ITIL_MATRIX
+
+
 class TicketOut(BaseModel):
     id: str
     subject: str
@@ -246,6 +293,9 @@ class TicketOut(BaseModel):
     category: str
     subcategory: Optional[str] = None
     priority: TicketPriority
+    impact: Optional[ImpactLevel] = None
+    urgency: Optional[UrgencyLevel] = None
+    priority_source: Optional[PrioritySource] = None
     channel: TicketChannel
     status: TicketStatus
     user_id: str
@@ -264,6 +314,11 @@ class TicketOut(BaseModel):
     sla_status: SLAStatus = SLAStatus.ON_TRACK
     sla_breached_at: Optional[datetime] = None
     sla_response_deadline: Optional[datetime] = None
+    sla_applied_rule: Optional[Dict[str, Any]] = None
+    # Reassignment Tracking & Feedback Loop
+    reassignment_count: int = 0
+    reassigned_from_agent_ids: List[str] = []
+    reassignment_history: List[Dict[str, Any]] = []
     created_at: datetime
     updated_at: datetime
 
@@ -282,6 +337,8 @@ class SLAPolicyOut(BaseModel):
     response_time_hours: float       # Max time to first response
     resolution_time_hours: float     # Max time to resolve
     at_risk_threshold_pct: float = 0.20  # Trigger AT_RISK when < 20% time left
+    category: Optional[str] = None
+    subcategory: Optional[str] = None
 
 
 class SLAPolicyUpdate(BaseModel):
@@ -314,6 +371,28 @@ class SLATicketDetailOut(BaseModel):
     time_remaining_minutes: Optional[int] = None
     pct_consumed: Optional[float] = None
     policy: Optional[dict] = None
+    applied_rule: Optional[Dict[str, Any]] = None
+
+
+class SLACalculateRequest(BaseModel):
+    """Request payload to preview SLA deadlines."""
+    priority: TicketPriority
+    category: Optional[str] = None
+    subcategory: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class SLACalculateResponse(BaseModel):
+    """Computed SLA response with deadlines and audit rule details."""
+    priority: TicketPriority
+    category: Optional[str] = None
+    subcategory: Optional[str] = None
+    response_time_hours: float
+    resolution_time_hours: float
+    response_deadline: datetime
+    resolution_deadline: datetime
+    rule_level: str
+    applied_rule: Dict[str, Any]
 
 
 class SLAScanResult(BaseModel):
@@ -438,6 +517,24 @@ class IntelligentTriageResult(BaseModel):
 
 
 # ──────────────────────────────────────────────
+# AI Ticket Classification Schemas (Step 1)
+# ──────────────────────────────────────────────
+
+class TicketClassificationRequest(BaseModel):
+    subject: str = Field(..., min_length=2, max_length=255, description="Objet ou titre du problème")
+    description: str = Field(..., min_length=5, max_length=5000, description="Description détaillée de l'incident")
+
+
+class TicketClassificationResponse(BaseModel):
+    category: str = Field(..., description="Catégorie issue de la taxonomie GEISER")
+    subcategory: str = Field(..., description="Sous-catégorie issue de la taxonomie GEISER")
+    priority: TicketPriority = Field(..., description="Priorité estimée (LOW, MEDIUM, HIGH, URGENT)")
+    tags: List[str] = Field(default_factory=list, description="Mots-clés et tags techniques")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Indicateur de confiance interne entre 0.0 et 1.0")
+    reasoning: str = Field(..., min_length=5, description="Explication courte et compréhensible")
+
+
+# ──────────────────────────────────────────────
 # Predictive Analytics & Dashboard Schemas
 # ──────────────────────────────────────────────
 
@@ -516,6 +613,9 @@ class SummaryKPIs(BaseModel):
     overall_mttr_hours: float
     overall_sla_compliance_pct: float
     critical_recurring_count: int
+    avg_response_hours: float = 0.5
+    satisfaction_avg: float = 4.8
+    satisfaction_responses_count: int = 0
 
 
 class AnalyticsDashboardOut(BaseModel):
@@ -581,8 +681,29 @@ class NotificationOut(BaseModel):
     channel: str  # "EMAIL", "SMS", "IN_APP"
     title: str
     message: str
-    status: str  # "SENT", "DELIVERED", "FAILED"
+    status: str  # "SENT", "DELIVERED", "FAILED", "SKIPPED_DUPLICATE"
+    provider: Optional[str] = None
+    provider_message_id: Optional[str] = None
+    event_type: Optional[str] = None
+    error_detail: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        populate_by_name = True
+
+
+class SMSTestRequest(BaseModel):
+    to: str = Field(..., description="Destination phone number (E.164 format, e.g. +33612345678 or +216...)")
+    message: str = Field(..., min_length=1, max_length=1600, description="SMS message content")
+
+
+class SMSTestResponse(BaseModel):
+    success: bool
+    status: str  # "sent", "failed", "simulated"
+    provider: str
+    message_id: Optional[str] = None
+    to: str
+    error: Optional[str] = None
 
 
 class ManagerKPIs(BaseModel):

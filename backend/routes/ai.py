@@ -5,13 +5,30 @@ from database.mongodb import get_database
 from core.deps import RoleChecker, get_current_user
 from schemas.schemas import (
     UserRole, KnowledgeBaseItem, IntelligentTriageResult,
-    ThreadSummaryOut, SuggestedActionItem, InternalDocItem
+    ThreadSummaryOut, SuggestedActionItem, InternalDocItem,
+    TicketClassificationRequest, TicketClassificationResponse
 )
+from services.ai.ai_classifier import AIClassifier
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 from typing import List, Optional
 
 router = APIRouter()
+
+
+@router.post("/classify-ticket", response_model=TicketClassificationResponse)
+async def classify_ticket(
+    payload: TicketClassificationRequest,
+    current_user=Depends(get_current_user)
+):
+    """
+    Real-time AI-assisted ticket classification for ticket creation.
+    Analyzes subject and description to automatically suggest category,
+    subcategory, priority, keywords/tags, confidence score and technical reasoning.
+    """
+    classifier = AIClassifier()
+    return await classifier.classify_ticket(payload.subject, payload.description)
+
 
 @router.get("/status")
 async def get_ai_status(

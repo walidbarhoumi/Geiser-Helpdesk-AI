@@ -5,7 +5,8 @@ from core.deps import get_current_user, RoleChecker
 from schemas.schemas import (
     TicketCreate, TicketOut, TicketStatus, TicketUpdate,
     StatusUpdateRequest, AssignAgentRequest, UserRole,
-    TicketResolveRequest, SendTicketResponseRequest
+    TicketResolveRequest, SendTicketResponseRequest, SubmitSatisfactionRequest,
+    PriorityCalculationRequest, PriorityCalculationResponse, PrioritySource
 )
 from services.email_service import EmailService
 
@@ -49,6 +50,25 @@ async def create_ticket(
     db=Depends(get_database)
 ):
     return await TicketController.create_ticket(ticket_in, current_user["id"], db)
+
+
+@router.post("/calculate-priority", response_model=PriorityCalculationResponse)
+async def calculate_priority_preview(
+    body: PriorityCalculationRequest,
+    current_user=Depends(get_current_user),
+):
+    """Preview ITIL priority calculated from impact and urgency."""
+    from services.itil_service import calculate_priority_from_impact_urgency
+    try:
+        calculated = calculate_priority_from_impact_urgency(body.impact, body.urgency)
+        return {
+            "impact": body.impact,
+            "urgency": body.urgency,
+            "priority": calculated,
+            "source": PrioritySource.ITIL_MATRIX,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/", response_model=List[TicketOut])
@@ -140,13 +160,42 @@ async def update_ticket(
         if hasattr(val, "value"):
             update_data[key] = val.value
 
-    # Recompute SLA deadlines when priority changes
-    if "priority" in update_data:
+    # ITIL priority calculation if impact or urgency is updated
+    impact_or_urgency_in_update = "impact" in update_data or "urgency" in update_data
+    if impact_or_urgency_in_update:
+        active_impact = update_data.get("impact", ticket.get("impact"))
+        active_urgency = update_data.get("urgency", ticket.get("urgency"))
+        if active_impact and active_urgency:
+            from services.itil_service import calculate_priority_from_impact_urgency
+            try:
+                itil_prio = calculate_priority_from_impact_urgency(active_impact, active_urgency)
+                update_data["priority"] = itil_prio.value
+                update_data["priority_source"] = PrioritySource.ITIL_MATRIX.value
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+
+    # Recompute SLA deadlines only if priority, category or subcategory actually changed
+    priority_changed = "priority" in update_data and update_data["priority"] != ticket.get("priority")
+    category_changed = "category" in update_data and update_data["category"] != ticket.get("category")
+    subcategory_changed = "subcategory" in update_data and update_data["subcategory"] != ticket.get("subcategory")
+
+    if priority_changed or category_changed or subcategory_changed:
         from services.sla_service import SLAService
         sla_service = SLAService(db)
         created_at = ticket.get("created_at") or datetime.utcnow()
-        update_data["sla_deadline"] = await sla_service.compute_sla_deadline(update_data["priority"], created_at)
-        update_data["sla_response_deadline"] = await sla_service.compute_sla_response_deadline(update_data["priority"], created_at)
+        active_prio = update_data.get("priority", ticket.get("priority"))
+        active_cat = update_data.get("category", ticket.get("category"))
+        active_subcat = update_data.get("subcategory", ticket.get("subcategory"))
+
+        sla_calc = await sla_service.calculate_ticket_sla(
+            priority=active_prio,
+            created_at=created_at,
+            category=active_cat,
+            subcategory=active_subcat
+        )
+        update_data["sla_deadline"] = sla_calc["resolution_deadline"]
+        update_data["sla_response_deadline"] = sla_calc["response_deadline"]
+        update_data["sla_applied_rule"] = sla_calc["applied_rule"]
         new_sla_status = await sla_service.compute_sla_status({**ticket, **update_data})
         update_data["sla_status"] = new_sla_status.value if hasattr(new_sla_status, "value") else new_sla_status
 
@@ -257,6 +306,43 @@ async def resolve_ticket(
         )
 
     return updated_ticket
+
+
+@router.post("/{id}/satisfaction", response_model=TicketOut)
+async def submit_ticket_satisfaction(
+    id: str,
+    body: SubmitSatisfactionRequest,
+    current_user=Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """
+    Submits a Customer Satisfaction (CSAT) rating (1-5) and optional comment for a resolved/closed ticket.
+    """
+    service = TicketService(db)
+    ticket = await service.get_ticket(id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # Only ticket creator or admin/agent can rate
+    if current_user["role"] == UserRole.USER and ticket["user_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    oid = MongoModel.to_object_id(id)
+    now = datetime.utcnow()
+
+    await db.tickets.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "satisfaction_rating": body.rating,
+                "satisfaction_comment": body.comment,
+                "satisfaction_submitted_at": now,
+                "updated_at": now
+            }
+        }
+    )
+
+    return await service.get_ticket(id)
 
 
 
