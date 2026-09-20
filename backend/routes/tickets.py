@@ -6,7 +6,8 @@ from schemas.schemas import (
     TicketCreate, TicketOut, TicketStatus, TicketUpdate,
     StatusUpdateRequest, AssignAgentRequest, UserRole,
     TicketResolveRequest, SendTicketResponseRequest, SubmitSatisfactionRequest,
-    PriorityCalculationRequest, PriorityCalculationResponse, PrioritySource
+    PriorityCalculationRequest, PriorityCalculationResponse, PrioritySource,
+    TicketActionType
 )
 from services.email_service import EmailService
 
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 @router.post("/{id}/auto-route", response_model=RoutingResult)
 async def auto_route_ticket(
     id: str,
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT])),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT])),
     db=Depends(get_database)
 ):
     """Triggers the intelligent AI routing for a specific ticket."""
@@ -49,7 +50,7 @@ async def create_ticket(
     current_user=Depends(get_current_user),
     db=Depends(get_database)
 ):
-    return await TicketController.create_ticket(ticket_in, current_user["id"], db)
+    return await TicketController.create_ticket(ticket_in, current_user["id"], db, actor_user=current_user)
 
 
 @router.post("/calculate-priority", response_model=PriorityCalculationResponse)
@@ -114,12 +115,12 @@ async def get_ticket(
 async def assign_ticket(
     id: str,
     body: AssignAgentRequest,
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT])),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR])),
     db=Depends(get_database)
 ):
     service = TicketService(db)
     try:
-        ticket = await service.assign_agent(id, body.agent_id)
+        ticket = await service.assign_agent(id, body.agent_id, actor_user=current_user)
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found")
         return ticket
@@ -131,11 +132,11 @@ async def assign_ticket(
 async def update_status(
     id: str,
     body: StatusUpdateRequest,
-    current_user=Depends(RoleChecker([UserRole.AGENT, UserRole.ADMIN])),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT])),
     db=Depends(get_database)
 ):
     service = TicketService(db)
-    ticket = await service.update_status(id, body.status)
+    ticket = await service.update_status(id, body.status, actor_user=current_user)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket
@@ -201,6 +202,25 @@ async def update_ticket(
 
     update_data["updated_at"] = datetime.utcnow()
     await db.tickets.update_one({"_id": MongoModel.to_object_id(id)}, {"$set": update_data})
+
+    # ISO 27001 Action History
+    if priority_changed:
+        await service.record_ticket_action(
+            ticket_id=id,
+            action_type=TicketActionType.PRIORITY_CHANGED.value,
+            actor_user=current_user,
+            details={"old_priority": ticket.get("priority"), "new_priority": update_data.get("priority")},
+            comment=f"Priorité modifiée de {ticket.get('priority')} à {update_data.get('priority')}"
+        )
+    if priority_changed or category_changed or subcategory_changed:
+        await service.record_ticket_action(
+            ticket_id=id,
+            action_type=TicketActionType.SLA_RECALCULATED.value,
+            actor_user=current_user,
+            details={"applied_rule": sla_calc.get("applied_rule"), "new_deadline": str(sla_calc.get("resolution_deadline"))},
+            comment="Recalcul des délais SLA suite à modification"
+        )
+
     return await service.get_ticket(id)
 
 
@@ -208,7 +228,7 @@ async def update_ticket(
 async def send_ticket_response(
     id: str,
     body: SendTicketResponseRequest,
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT])),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT])),
     db=Depends(get_database)
 ):
     """
@@ -254,6 +274,15 @@ async def send_ticket_response(
         }
     )
 
+    # ISO 27001 Action History
+    await service.record_ticket_action(
+        ticket_id=id,
+        action_type=TicketActionType.RESPONSE_SENT.value,
+        actor_user=current_user,
+        details={"content_preview": (body.response_text[:80] + "...") if len(body.response_text) > 80 else body.response_text},
+        comment="Réponse officielle transmise au demandeur"
+    )
+
     return {"success": True, "message": "Réponse envoyée avec succès par e-mail au demandeur."}
 
 
@@ -261,7 +290,7 @@ async def send_ticket_response(
 async def resolve_ticket(
     id: str,
     body: TicketResolveRequest,
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT])),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT])),
     db=Depends(get_database)
 ):
     """
@@ -285,6 +314,15 @@ async def resolve_ticket(
                 "updated_at": now
             }
         }
+    )
+
+    # ISO 27001 Action History
+    await service.record_ticket_action(
+        ticket_id=id,
+        action_type=TicketActionType.RESOLUTION_RECORDED.value,
+        actor_user=current_user,
+        details={"resolution_note": body.resolution_note},
+        comment="Ticket résolu avec note technique de clôture"
     )
 
     updated_ticket = await service.get_ticket(id)
@@ -342,8 +380,16 @@ async def submit_ticket_satisfaction(
         }
     )
 
-    return await service.get_ticket(id)
+    # ISO 27001 Action History
+    await service.record_ticket_action(
+        ticket_id=id,
+        action_type=TicketActionType.SATISFACTION_SUBMITTED.value,
+        actor_user=current_user,
+        details={"rating": body.rating, "comment": body.comment},
+        comment=f"Évaluation CSAT enregistrée : {body.rating}/5"
+    )
 
+    return await service.get_ticket(id)
 
 
 @router.post("/{id}/attachments")
@@ -361,7 +407,18 @@ async def upload_attachment(
         {"_id": MongoModel.to_object_id(id)},
         {"$addToSet": {"attachments": file_path}}
     )
+
+    # ISO 27001 Action History
+    await TicketService(db).record_ticket_action(
+        ticket_id=id,
+        action_type=TicketActionType.ATTACHMENT_UPLOADED.value,
+        actor_user=current_user,
+        details={"filename": file.filename, "path": file_path},
+        comment=f"Pièce jointe ajoutée : {file.filename}"
+    )
+
     return {"filename": file.filename, "path": file_path}
+
 
 @router.delete("/{id}")
 async def delete_ticket(
@@ -370,7 +427,7 @@ async def delete_ticket(
     db=Depends(get_database)
 ):
     service = TicketService(db)
-    deleted = await service.delete_ticket(id)
+    deleted = await service.delete_ticket(id, actor_user=current_user)
     if not deleted:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return {"message": "Ticket deleted"}

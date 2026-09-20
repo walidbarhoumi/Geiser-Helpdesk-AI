@@ -1,6 +1,7 @@
 export const UserRole = {
   USER: "USER",
   AGENT: "AGENT",
+  SUPERVISOR: "SUPERVISOR",
   ADMIN: "ADMIN",
 } as const;
 export type UserRole = typeof UserRole[keyof typeof UserRole];
@@ -115,8 +116,29 @@ export type Ticket = {
     created_at?: string;
     is_internal?: boolean;
   }>;
+  action_history?: Array<{
+    id: string;
+    timestamp: string;
+    actor_id: string;
+    actor_name: string;
+    actor_role: string;
+    action_type: string;
+    details?: Record<string, any>;
+    comment?: string;
+  }>;
   created_at: string;
   updated_at: string;
+};
+
+export type TicketActionLog = {
+  id: string;
+  timestamp: string;
+  actor_id: string;
+  actor_name: string;
+  actor_role: string;
+  action_type: string;
+  details?: Record<string, any>;
+  comment?: string;
 };
 
 
@@ -336,6 +358,34 @@ export type TicketClassificationResult = {
   tags: string[];
   confidence: number;
   reasoning: string;
+};
+
+export type SecurityAuditLog = {
+  id: string;
+  timestamp: string;
+  actor_id?: string;
+  actor_email?: string;
+  actor_name?: string;
+  actor_role?: string;
+  client_ip?: string;
+  user_agent?: string;
+  event_category: string;
+  event_type: string;
+  severity: "INFO" | "WARNING" | "CRITICAL";
+  target_resource_type: string;
+  target_resource_id?: string;
+  status: string;
+  details?: Record<string, any>;
+};
+
+export type AuditStats = {
+  total_events: number;
+  info_count: number;
+  warning_count: number;
+  critical_count: number;
+  login_successes: number;
+  login_failures: number;
+  access_denied_count: number;
 };
 
 

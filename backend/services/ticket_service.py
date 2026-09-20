@@ -1,5 +1,7 @@
+import uuid
+from typing import Optional, Dict, Any, List
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from schemas.schemas import TicketCreate, TicketStatus, TicketPriority, SLAStatus
+from schemas.schemas import TicketCreate, TicketStatus, TicketPriority, SLAStatus, TicketActionType
 from datetime import datetime
 from models.base import MongoModel
 from bson import ObjectId
@@ -8,6 +10,7 @@ import re
 from services.email_service import EmailService
 from services.sla_service import SLAService
 
+logger = logging.getLogger(__name__)
 
 
 class TicketService:
@@ -17,7 +20,71 @@ class TicketService:
         self.agents = db.agents
         self.users = db.users
 
-    async def create_ticket(self, ticket_in: TicketCreate, user_id: str):
+    async def record_ticket_action(
+        self,
+        ticket_id: str,
+        action_type: str,
+        actor_user: Optional[dict] = None,
+        details: Optional[Dict[str, Any]] = None,
+        comment: Optional[str] = None,
+    ):
+        """Records an immutable ISO 27001 audit action in the ticket's action_history."""
+        oid = MongoModel.to_object_id(ticket_id)
+        if not oid:
+            return
+
+        actor_id = str(actor_user.get("id")) if actor_user else "SYSTEM"
+        actor_name = (actor_user.get("full_name") or actor_user.get("email")) if actor_user else "Système"
+        actor_role = actor_user.get("role") if actor_user else "SYSTEM"
+        if hasattr(actor_role, "value"):
+            actor_role = actor_role.value
+
+        action_entry = {
+            "id": str(uuid.uuid4()),
+            "timestamp": datetime.utcnow(),
+            "actor_id": str(actor_id),
+            "actor_name": str(actor_name),
+            "actor_role": str(actor_role),
+            "action_type": action_type,
+            "details": details or {},
+            "comment": comment,
+        }
+
+        await self.tickets.update_one(
+            {"_id": oid},
+            {"$push": {"action_history": action_entry}}
+        )
+
+        # Also mirror the action into the global ISO 27001 audit_logs collection
+        try:
+            from services.audit_service import AuditService
+            from schemas.schemas import AuditEventCategory, AuditSeverity
+            audit_svc = AuditService(self.db)
+            event_type = f"TICKET_{action_type}" if not str(action_type).startswith("TICKET_") else str(action_type)
+            severity = AuditSeverity.INFO
+            if action_type in ("PRIORITY_CHANGED", "SLA_OVERRIDE"):
+                severity = AuditSeverity.WARNING
+
+            import asyncio
+            asyncio.create_task(
+                audit_svc.log_event(
+                    event_category=AuditEventCategory.TICKET,
+                    event_type=event_type,
+                    severity=severity,
+                    target_resource_type="ticket",
+                    target_resource_id=str(ticket_id),
+                    actor_id=str(actor_id),
+                    actor_email=actor_user.get("email") if actor_user else None,
+                    actor_name=str(actor_name),
+                    actor_role=str(actor_role),
+                    status="SUCCESS",
+                    details={**(details or {}), **({"comment": comment} if comment else {})}
+                )
+            )
+        except Exception as audit_err:
+            logger.error(f"Failed to push ticket audit log: {audit_err}")
+
+    async def create_ticket(self, ticket_in: TicketCreate, user_id: str, actor_user: Optional[dict] = None):
         ticket_dict = ticket_in.dict()
         ticket_dict["user_id"] = user_id
         ticket_dict["status"] = TicketStatus.OPEN.value
@@ -75,10 +142,71 @@ class TicketService:
         ticket_dict["sla_status"] = SLAStatus.ON_TRACK.value
         ticket_dict["sla_breached_at"] = None
 
+        # ISO 27001 Ticket Action History: Record creation action
+        creator_name = "Utilisateur"
+        creator_role = "USER"
+        if actor_user:
+            creator_name = actor_user.get("full_name") or actor_user.get("email") or "Utilisateur"
+            creator_role = actor_user.get("role", "USER")
+        else:
+            creator = await self.users.find_one({"_id": MongoModel.to_object_id(user_id)})
+            if creator:
+                creator_name = creator.get("full_name") or creator.get("email") or "Utilisateur"
+                creator_role = creator.get("role", "USER")
+        if hasattr(creator_role, "value"):
+            creator_role = creator_role.value
+
+        ticket_dict["action_history"] = [{
+            "id": str(uuid.uuid4()),
+            "timestamp": ticket_dict["created_at"],
+            "actor_id": str(user_id),
+            "actor_name": str(creator_name),
+            "actor_role": str(creator_role),
+            "action_type": TicketActionType.CREATED.value,
+            "details": {
+                "subject": ticket_dict.get("subject"),
+                "category": ticket_dict.get("category"),
+                "subcategory": ticket_dict.get("subcategory"),
+                "priority": ticket_dict.get("priority"),
+                "channel": ticket_dict.get("channel"),
+                "assigned_agent_id": ticket_dict.get("assigned_agent_id"),
+            },
+            "comment": "Création du ticket"
+        }]
+
         result = await self.tickets.insert_one(ticket_dict)
         ticket_dict["_id"] = result.inserted_id
         formatted_ticket = MongoModel.format_id(ticket_dict)
         
+        # Global ISO 27001 Audit Log for ticket creation
+        try:
+            from services.audit_service import AuditService
+            from schemas.schemas import AuditEventCategory, AuditSeverity
+            audit_svc = AuditService(self.db)
+            import asyncio
+            asyncio.create_task(
+                audit_svc.log_event(
+                    event_category=AuditEventCategory.TICKET,
+                    event_type="TICKET_CREATED",
+                    severity=AuditSeverity.INFO,
+                    target_resource_type="ticket",
+                    target_resource_id=str(formatted_ticket["id"]),
+                    actor_id=str(user_id),
+                    actor_email=actor_user.get("email") if actor_user else None,
+                    actor_name=str(creator_name),
+                    actor_role=str(creator_role),
+                    status="SUCCESS",
+                    details={
+                        "subject": formatted_ticket.get("subject"),
+                        "category": formatted_ticket.get("category"),
+                        "priority": formatted_ticket.get("priority"),
+                        "channel": formatted_ticket.get("channel"),
+                    }
+                )
+            )
+        except Exception as audit_err:
+            logger.error(f"Failed to log ticket creation audit: {audit_err}")
+
         # Send Notifications (Email & SMS via NotificationService)
         try:
             from services.notification_service import NotificationService
@@ -114,13 +242,15 @@ class TicketService:
         ticket = await self.tickets.find_one({"_id": oid})
         return MongoModel.format_id(ticket)
 
-    async def update_status(self, ticket_id: str, new_status: TicketStatus):
+    async def update_status(self, ticket_id: str, new_status: TicketStatus, actor_user: Optional[dict] = None):
         oid = MongoModel.to_object_id(ticket_id)
         if not oid:
             return None
 
         ticket = await self.tickets.find_one({"_id": oid})
-        update_fields: dict = {"status": new_status.value, "updated_at": datetime.utcnow()}
+        old_status = ticket.get("status") if ticket else "OPEN"
+        new_status_val = new_status.value if hasattr(new_status, "value") else str(new_status)
+        update_fields: dict = {"status": new_status_val, "updated_at": datetime.utcnow()}
 
         if ticket and new_status not in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
             sla_service = SLAService(self.db)
@@ -130,23 +260,33 @@ class TicketService:
                 update_fields["sla_breached_at"] = datetime.utcnow()
 
         await self.tickets.update_one({"_id": oid}, {"$set": update_fields})
+
+        # ISO 27001 Action History: Record status transition
+        if old_status != new_status_val:
+            await self.record_ticket_action(
+                ticket_id=ticket_id,
+                action_type=TicketActionType.STATUS_CHANGED.value,
+                actor_user=actor_user,
+                details={"old_status": old_status, "new_status": new_status_val},
+                comment=f"Statut modifié de {old_status} à {new_status_val}"
+            )
+
         updated_ticket = await self.get_ticket(ticket_id)
         
         if updated_ticket:
             try:
                 from services.notification_service import NotificationService
-                old_status = ticket.get("status") if ticket else "OPEN"
                 await NotificationService(self.db).notify_status_changed(
                     ticket=updated_ticket,
                     old_status=old_status,
-                    new_status=new_status.value
+                    new_status=new_status_val
                 )
             except Exception as notify_err:
                 logger.error(f"Failed to dispatch status change notification: {notify_err}")
                 
         return updated_ticket
 
-    async def assign_agent(self, ticket_id: str, agent_id: str):
+    async def assign_agent(self, ticket_id: str, agent_id: str, actor_user: Optional[dict] = None):
         oid = MongoModel.to_object_id(ticket_id)
         if not oid:
             return None
@@ -201,11 +341,29 @@ class TicketService:
                 }
             )
 
+            # ISO 27001 Action History: Reassignment
+            await self.record_ticket_action(
+                ticket_id=ticket_id,
+                action_type=TicketActionType.AGENT_REASSIGNED.value,
+                actor_user=actor_user,
+                details={"from_agent_id": str(old_agent_id), "to_agent_id": str(agent_id)},
+                comment=f"Ticket réassigné de l'agent {str(old_agent_id)[:8]} à {str(agent_id)[:8]}"
+            )
+
         # Case 2: First-time assignment
         else:
             await self.tickets.update_one(
                 {"_id": oid},
                 {"$set": update_set}
+            )
+
+            # ISO 27001 Action History: First-time assignment
+            await self.record_ticket_action(
+                ticket_id=ticket_id,
+                action_type=TicketActionType.AGENT_ASSIGNED.value,
+                actor_user=actor_user,
+                details={"assigned_agent_id": str(agent_id)},
+                comment=f"Ticket assigné à l'agent {str(agent_id)[:8]}"
             )
 
         # Increment new agent's workload
@@ -217,9 +375,46 @@ class TicketService:
         return await self.get_ticket(ticket_id)
 
 
-    async def delete_ticket(self, ticket_id: str):
+    async def delete_ticket(self, ticket_id: str, actor_user: Optional[dict] = None):
         oid = MongoModel.to_object_id(ticket_id)
         if not oid:
             return False
+        ticket = await self.tickets.find_one({"_id": oid})
         result = await self.tickets.delete_one({"_id": oid})
+        if result.deleted_count > 0:
+            # ISO 27001 Security Audit Log
+            try:
+                from services.audit_service import AuditService
+                from schemas.schemas import AuditEventCategory, AuditSeverity
+                audit_svc = AuditService(self.db)
+                actor_id = str(actor_user.get("id")) if actor_user else None
+                actor_email = actor_user.get("email") if actor_user else None
+                actor_name = (actor_user.get("full_name") or actor_user.get("email")) if actor_user else None
+                actor_role = actor_user.get("role") if actor_user else "ADMIN"
+                if hasattr(actor_role, "value"):
+                    actor_role = actor_role.value
+
+                import asyncio
+                asyncio.create_task(
+                    audit_svc.log_event(
+                        event_category=AuditEventCategory.TICKET,
+                        event_type="TICKET_DELETED",
+                        severity=AuditSeverity.CRITICAL,
+                        target_resource_type="ticket",
+                        target_resource_id=ticket_id,
+                        actor_id=actor_id,
+                        actor_email=actor_email,
+                        actor_name=actor_name,
+                        actor_role=actor_role,
+                        status="SUCCESS",
+                        details={
+                            "deleted_ticket_subject": ticket.get("subject") if ticket else "",
+                            "deleted_ticket_category": ticket.get("category") if ticket else "",
+                            "deleted_ticket_priority": ticket.get("priority") if ticket else "",
+                        }
+                    )
+                )
+            except Exception as e:
+                logger.error(f"Failed to log ticket deletion audit: {e}")
+
         return result.deleted_count > 0

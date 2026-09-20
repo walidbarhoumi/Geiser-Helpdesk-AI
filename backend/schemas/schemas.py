@@ -1,3 +1,4 @@
+import uuid
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List, Any, Dict
 from datetime import datetime
@@ -7,6 +8,7 @@ from enum import Enum
 class UserRole(str, Enum):
     USER = "USER"
     AGENT = "AGENT"
+    SUPERVISOR = "SUPERVISOR"
     ADMIN = "ADMIN"
 
 
@@ -207,8 +209,33 @@ class TeamOut(BaseModel):
 
 
 # ──────────────────────────────────────────────
-# Ticket Schemas
+# Ticket Schemas & Action History (ISO 27001 Audit)
 # ──────────────────────────────────────────────
+
+class TicketActionType(str, Enum):
+    CREATED = "CREATED"
+    STATUS_CHANGED = "STATUS_CHANGED"
+    AGENT_ASSIGNED = "AGENT_ASSIGNED"
+    AGENT_REASSIGNED = "AGENT_REASSIGNED"
+    PRIORITY_CHANGED = "PRIORITY_CHANGED"
+    ITIL_CALCULATED = "ITIL_CALCULATED"
+    SLA_RECALCULATED = "SLA_RECALCULATED"
+    RESPONSE_SENT = "RESPONSE_SENT"
+    RESOLUTION_RECORDED = "RESOLUTION_RECORDED"
+    ATTACHMENT_UPLOADED = "ATTACHMENT_UPLOADED"
+    SATISFACTION_SUBMITTED = "SATISFACTION_SUBMITTED"
+
+
+class TicketActionLog(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    actor_id: str
+    actor_name: str
+    actor_role: str
+    action_type: TicketActionType
+    details: Dict[str, Any] = Field(default_factory=dict)
+    comment: Optional[str] = None
+
 
 class TicketBase(BaseModel):
     subject: str
@@ -319,6 +346,8 @@ class TicketOut(BaseModel):
     reassignment_count: int = 0
     reassigned_from_agent_ids: List[str] = []
     reassignment_history: List[Dict[str, Any]] = []
+    # ISO 27001 Action History Audit Trail
+    action_history: List[TicketActionLog] = []
     created_at: datetime
     updated_at: datetime
 
@@ -756,5 +785,79 @@ class ManagerDashboardOut(BaseModel):
     filtered_tickets_count: int
     period_label: str
     generated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ──────────────────────────────────────────────
+# ISO/IEC 27001:2013 Security Audit Trail Schemas
+# ──────────────────────────────────────────────
+
+class AuditEventCategory(str, Enum):
+    AUTH = "AUTH"
+    ACCESS_CONTROL = "ACCESS_CONTROL"
+    TICKET = "TICKET"
+    SLA = "SLA"
+    USER_MGMT = "USER_MGMT"
+    TEAM_MGMT = "TEAM_MGMT"
+    AI = "AI"
+    TELECOM = "TELECOM"
+    DATA_EXPORT = "DATA_EXPORT"
+    SYSTEM = "SYSTEM"
+
+
+class AuditSeverity(str, Enum):
+    INFO = "INFO"
+    WARNING = "WARNING"
+    CRITICAL = "CRITICAL"
+
+
+class SecurityAuditLogOut(BaseModel):
+    id: str
+    timestamp: datetime
+    actor_id: Optional[str] = None
+    actor_email: Optional[str] = None
+    actor_name: Optional[str] = None
+    actor_role: Optional[str] = None
+    client_ip: Optional[str] = None
+    user_agent: Optional[str] = None
+    event_category: AuditEventCategory
+    event_type: str
+    severity: AuditSeverity
+    target_resource_type: str
+    target_resource_id: Optional[str] = None
+    status: str = "SUCCESS"  # SUCCESS, FAILURE, DENIED
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+    class Config:
+        populate_by_name = True
+
+
+class AuditFilterParams(BaseModel):
+    category: Optional[AuditEventCategory] = None
+    severity: Optional[AuditSeverity] = None
+    actor_id: Optional[str] = None
+    actor_email: Optional[str] = None
+    actor_role: Optional[str] = None
+    target_resource_type: Optional[str] = None
+    target_resource_id: Optional[str] = None
+    status: Optional[str] = None
+    event_type: Optional[str] = None
+    search: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    limit: int = 50
+    skip: int = 0
+
+
+class AuditStatsOut(BaseModel):
+    total_events: int
+    info_count: int
+    warning_count: int
+    critical_count: int
+    login_successes: int
+    login_failures: int
+    access_denied_count: int
+    ticket_events: int = 0
+    user_mgmt_events: int = 0
+    team_mgmt_events: int = 0
 
 

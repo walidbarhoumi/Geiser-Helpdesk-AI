@@ -5,7 +5,7 @@ import ProtectedRoute from './components/common/ProtectedRoute';
 import { Toaster } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard, Ticket, Users, Bot, Shield,
+  LayoutDashboard, Ticket, Users, Bot, Shield, ShieldCheck,
   LogOut, ChevronRight, Bell, Search, Settings,
   Activity, Command, Sparkles, Timer
 } from 'lucide-react';
@@ -29,6 +29,7 @@ import UserList from './pages/users/UserList';
 import Profile from './pages/profile/Profile';
 import SLADashboard from './pages/sla/SLADashboard';
 import RAGDashboard from './pages/rag/RAGDashboard';
+import AuditTrail from './pages/audit/AuditTrail';
 
 import { UserRole } from './types';
 import { SupportChatbot } from './components/chat/SupportChatbot';
@@ -251,7 +252,7 @@ const Sidebar: React.FC = () => {
 
       ]
     },
-    ...(user?.role === UserRole.ADMIN || user?.role === UserRole.AGENT ? [{
+    ...(user?.role === UserRole.ADMIN || user?.role === UserRole.SUPERVISOR || user?.role === UserRole.AGENT ? [{
       label: 'Operations',
       items: [
         { to: '/teams', icon: <Users size={17} />, label: 'Teams' },
@@ -261,10 +262,11 @@ const Sidebar: React.FC = () => {
         { to: '/rag', icon: <Activity size={17} />, label: 'RAG Explorer' },
       ]
     }] : []),
-    ...(user?.role === UserRole.ADMIN ? [{
-      label: 'Admin',
+    ...(user?.role === UserRole.ADMIN || user?.role === UserRole.SUPERVISOR ? [{
+      label: 'Gouvernance & Audit',
       items: [
-        { to: '/users', icon: <Shield size={17} />, label: 'Users' },
+        ...(user?.role === UserRole.ADMIN ? [{ to: '/users', icon: <Shield size={17} />, label: 'Users' }] : []),
+        { to: '/audit', icon: <ShieldCheck size={17} />, label: 'Audit & Sécurité' },
       ]
     }] : []),
   ];
@@ -474,6 +476,7 @@ const Navbar: React.FC = () => {
     '/users': 'Users',
     '/profile': 'Profile',
     '/sla': 'SLA Monitor',
+    '/audit': 'Audit & Sécurité',
   };
 
   const currentPage = crumbMap[location.pathname] || 'Workspace';
@@ -709,19 +712,22 @@ const App: React.FC = () => {
               <ProtectedRoute roles={[UserRole.ADMIN]}><UserList /></ProtectedRoute>
             } />
             <Route path="/agents" element={
-              <ProtectedRoute roles={[UserRole.ADMIN]}><AgentList /></ProtectedRoute>
+              <ProtectedRoute roles={[UserRole.ADMIN, UserRole.SUPERVISOR]}><AgentList /></ProtectedRoute>
             } />
             <Route path="/agents/create" element={
               <ProtectedRoute roles={[UserRole.ADMIN]}><AgentCreate /></ProtectedRoute>
             } />
             <Route path="/teams" element={
-              <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN]}><TeamList /></ProtectedRoute>
+              <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN, UserRole.SUPERVISOR]}><TeamList /></ProtectedRoute>
             } />
             <Route path="/teams/create" element={
-              <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN]}><TeamCreate /></ProtectedRoute>
+              <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN, UserRole.SUPERVISOR]}><TeamCreate /></ProtectedRoute>
             } />
             <Route path="/rag" element={
-              <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN]}><RAGDashboard /></ProtectedRoute>
+              <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN, UserRole.SUPERVISOR]}><RAGDashboard /></ProtectedRoute>
+            } />
+            <Route path="/audit" element={
+              <ProtectedRoute roles={[UserRole.ADMIN, UserRole.SUPERVISOR]}><AuditTrail /></ProtectedRoute>
             } />
           </Route>
 

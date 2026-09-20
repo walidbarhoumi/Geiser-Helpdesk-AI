@@ -16,12 +16,36 @@ async def create_team(
     db=Depends(get_database)
 ):
     service = TeamService(db)
-    return await service.create_team(team_in)
+    team = await service.create_team(team_in)
+
+    # ISO 27001 Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.TEAM_MGMT,
+                event_type="TEAM_CREATED",
+                severity=AuditSeverity.INFO,
+                target_resource_type="team",
+                target_resource_id=str(team.get("id")),
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role"),
+                status="SUCCESS",
+                details={"team_name": team_in.name, "description": team_in.description}
+            )
+        )
+    except Exception:
+        pass
+
+    return team
 
 
 @router.get("/", response_model=List[TeamOut])
 async def list_teams(
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT])),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT])),
     db=Depends(get_database)
 ):
     service = TeamService(db)
@@ -54,6 +78,29 @@ async def add_agent(
     team = await service.add_agent_to_team(id, agent_id)
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
+
+    # ISO 27001 Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.TEAM_MGMT,
+                event_type="TEAM_MEMBER_ADDED",
+                severity=AuditSeverity.INFO,
+                target_resource_type="team",
+                target_resource_id=id,
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role"),
+                status="SUCCESS",
+                details={"added_agent_id": agent_id}
+            )
+        )
+    except Exception:
+        pass
+
     return team
 
 
@@ -68,6 +115,29 @@ async def remove_agent(
     team = await service.remove_agent_from_team(id, agent_id)
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
+
+    # ISO 27001 Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.TEAM_MGMT,
+                event_type="TEAM_MEMBER_REMOVED",
+                severity=AuditSeverity.INFO,
+                target_resource_type="team",
+                target_resource_id=id,
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role"),
+                status="SUCCESS",
+                details={"removed_agent_id": agent_id}
+            )
+        )
+    except Exception:
+        pass
+
     return team
 
 
@@ -82,6 +152,29 @@ async def update_team(
     team = await service.update_team(id, team_in.dict(exclude_unset=True))
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
+
+    # ISO 27001 Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.TEAM_MGMT,
+                event_type="TEAM_UPDATED",
+                severity=AuditSeverity.INFO,
+                target_resource_type="team",
+                target_resource_id=id,
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role"),
+                status="SUCCESS",
+                details=team_in.dict(exclude_unset=True)
+            )
+        )
+    except Exception:
+        pass
+
     return team
 
 
@@ -95,4 +188,27 @@ async def delete_team(
     deleted = await service.delete_team(id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Team not found")
+
+    # ISO 27001 Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.TEAM_MGMT,
+                event_type="TEAM_DELETED",
+                severity=AuditSeverity.WARNING,
+                target_resource_type="team",
+                target_resource_id=id,
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role"),
+                status="SUCCESS",
+                details={"deleted_team_id": id}
+            )
+        )
+    except Exception:
+        pass
+
     return {"message": "Team deleted"}

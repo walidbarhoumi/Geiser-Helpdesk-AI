@@ -15,7 +15,7 @@ router = APIRouter()
 
 @router.get("/policies", response_model=List[SLAPolicyOut])
 async def list_policies(
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT])),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT])),
     db=Depends(get_database),
 ):
     """List default + custom SLA policies per priority."""
@@ -35,6 +35,32 @@ async def update_policy(
     if not update:
         raise HTTPException(status_code=400, detail="No fields to update")
     policy = await service.update_policy(priority.value, update)
+
+    # ISO 27001 Security Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.SLA,
+                event_type="SLA_POLICY_OVERRIDE",
+                severity=AuditSeverity.WARNING,
+                target_resource_type="sla_policy",
+                target_resource_id=priority.value,
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role", "ADMIN"),
+                status="SUCCESS",
+                details={
+                    "priority": priority.value,
+                    "updated_fields": update
+                }
+            )
+        )
+    except Exception:
+        pass
+
     return {
         "priority": priority,
         "response_time_hours": policy["response_time_hours"],
@@ -75,7 +101,7 @@ async def calculate_sla_preview(
 
 @router.get("/alerts", response_model=List[SLAAlertOut])
 async def list_alerts(
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT])),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT])),
     db=Depends(get_database),
 ):
     """List active AT_RISK / BREACHED tickets."""
@@ -97,9 +123,9 @@ async def get_ticket_sla_status(
 
 @router.post("/scan", response_model=SLAScanResult)
 async def trigger_sla_scan(
-    current_user=Depends(RoleChecker([UserRole.ADMIN])),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR])),
     db=Depends(get_database),
 ):
-    """Manually trigger SLA scan (admin only)."""
+    """Manually trigger SLA scan (admin/supervisor)."""
     stats = await SLAService(db).scan_tickets_and_alert()
     return stats

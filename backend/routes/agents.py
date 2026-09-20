@@ -16,12 +16,36 @@ async def create_agent(
     db=Depends(get_database)
 ):
     service = AgentService(db)
-    return await service.create_agent(agent_in)
+    agent = await service.create_agent(agent_in)
+
+    # ISO 27001 Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.USER_MGMT,
+                event_type="AGENT_CREATED",
+                severity=AuditSeverity.INFO,
+                target_resource_type="agent",
+                target_resource_id=str(agent.get("id")),
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role"),
+                status="SUCCESS",
+                details={"agent_user_id": agent_in.user_id, "skills": agent_in.skills}
+            )
+        )
+    except Exception:
+        pass
+
+    return agent
 
 
 @router.get("/", response_model=List[AgentOut])
 async def list_agents(
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT])),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT])),
     db=Depends(get_database)
 ):
     service = AgentService(db)
@@ -58,6 +82,29 @@ async def update_agent_skills(
     agent = await db.agents.find_one({"_id": oid})
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+    # ISO 27001 Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.USER_MGMT,
+                event_type="AGENT_SKILLS_UPDATED",
+                severity=AuditSeverity.INFO,
+                target_resource_type="agent",
+                target_resource_id=id,
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role"),
+                status="SUCCESS",
+                details={"new_skills": skills}
+            )
+        )
+    except Exception:
+        pass
+
     return MongoModel.format_id(agent)
 
 
@@ -78,6 +125,29 @@ async def update_agent_availability(
     agent = await db.agents.find_one({"_id": oid})
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+    # ISO 27001 Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.USER_MGMT,
+                event_type="AGENT_AVAILABILITY_CHANGED",
+                severity=AuditSeverity.INFO,
+                target_resource_type="agent",
+                target_resource_id=id,
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role"),
+                status="SUCCESS",
+                details={"is_available": is_available}
+            )
+        )
+    except Exception:
+        pass
+
     return MongoModel.format_id(agent)
 
 
@@ -92,6 +162,29 @@ async def update_agent(
     agent = await service.update_agent(id, agent_in.dict(exclude_unset=True))
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+    # ISO 27001 Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.USER_MGMT,
+                event_type="AGENT_UPDATED",
+                severity=AuditSeverity.INFO,
+                target_resource_type="agent",
+                target_resource_id=id,
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role"),
+                status="SUCCESS",
+                details=agent_in.dict(exclude_unset=True)
+            )
+        )
+    except Exception:
+        pass
+
     return agent
 
 
@@ -105,4 +198,27 @@ async def delete_agent(
     deleted = await service.delete_agent(id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+    # ISO 27001 Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.USER_MGMT,
+                event_type="AGENT_DELETED",
+                severity=AuditSeverity.WARNING,
+                target_resource_type="agent",
+                target_resource_id=id,
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role"),
+                status="SUCCESS",
+                details={"deleted_agent_id": id}
+            )
+        )
+    except Exception:
+        pass
+
     return {"message": "Agent deleted"}

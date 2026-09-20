@@ -40,7 +40,7 @@ async def get_analytics_dashboard(
 @router.get("/predictive-insights", response_model=AIPredictiveInsights)
 async def get_predictive_insights(
     db: AsyncIOMotorDatabase = Depends(get_database),
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT]))
 ):
     """
     Returns strategic predictive insights, volume forecasts and root-cause issues.
@@ -58,7 +58,7 @@ async def export_excel_report(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     db: AsyncIOMotorDatabase = Depends(get_database),
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR]))
 ):
     """
     Generates and downloads a custom Excel (.xlsx) report covering:
@@ -99,6 +99,28 @@ async def export_excel_report(
     report_payload = dashboard_data.dict()
     report_payload["tickets"] = raw_tickets
 
+    # ISO 27001 Security Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.DATA_EXPORT,
+                event_type="REPORT_EXPORT_EXCEL",
+                severity=AuditSeverity.INFO,
+                target_resource_type="report_excel",
+                target_resource_id=None,
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role", "SUPERVISOR"),
+                status="SUCCESS",
+                details=filter_meta
+            )
+        )
+    except Exception:
+        pass
+
     excel_stream = ReportExportService.generate_excel_report(report_payload, filter_meta=filter_meta)
     filename = f"Rapport_GEISER_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
@@ -117,7 +139,7 @@ async def export_pdf_report(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     db: AsyncIOMotorDatabase = Depends(get_database),
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR]))
 ):
     """
     Generates and downloads an executive PDF report covering:
@@ -155,6 +177,28 @@ async def export_pdf_report(
 
     report_payload = dashboard_data.dict()
     report_payload["tickets"] = raw_tickets
+
+    # ISO 27001 Security Audit Log
+    try:
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        import asyncio
+        asyncio.create_task(
+            AuditService(db).log_event(
+                event_category=AuditEventCategory.DATA_EXPORT,
+                event_type="REPORT_EXPORT_PDF",
+                severity=AuditSeverity.INFO,
+                target_resource_type="report_pdf",
+                target_resource_id=None,
+                actor_id=str(current_user.get("id")),
+                actor_email=current_user.get("email"),
+                actor_role=current_user.get("role", "SUPERVISOR"),
+                status="SUCCESS",
+                details=filter_meta
+            )
+        )
+    except Exception:
+        pass
 
     pdf_stream = ReportExportService.generate_pdf_report(report_payload, filter_meta=filter_meta)
     filename = f"Rapport_GEISER_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"

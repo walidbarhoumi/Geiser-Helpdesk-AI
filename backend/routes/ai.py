@@ -32,7 +32,7 @@ async def classify_ticket(
 
 @router.get("/status")
 async def get_ai_status(
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT]))
 ):
     client = OllamaClient()
     return await client.check_health()
@@ -41,7 +41,7 @@ async def get_ai_status(
 async def generate_ai_response(
     ticket_id: str,
     db: AsyncIOMotorDatabase = Depends(get_database),
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT]))
 ):
     """
     Analyzes ticket and generates a suggested AI response.
@@ -57,7 +57,7 @@ async def generate_ai_response(
 async def get_intelligent_triage(
     ticket_id: str,
     db: AsyncIOMotorDatabase = Depends(get_database),
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT]))
 ):
     """
     Runs full intelligent triage: detects repetitive tickets,
@@ -97,7 +97,7 @@ async def add_to_knowledge_base(
 async def summarize_ticket_thread(
     ticket_id: str,
     db: AsyncIOMotorDatabase = Depends(get_database),
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT]))
 ):
     """
     Summarizes entire conversation thread for agents: initial issue,
@@ -117,7 +117,7 @@ async def summarize_ticket_thread(
 async def get_suggested_actions(
     ticket_id: str,
     db: AsyncIOMotorDatabase = Depends(get_database),
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT]))
 ):
     """
     Provides smart recommended next actions for the agent handling the ticket.
@@ -137,7 +137,7 @@ async def search_internal_documentation(
     query: str = "",
     category: Optional[str] = None,
     db: AsyncIOMotorDatabase = Depends(get_database),
-    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.AGENT]))
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT]))
 ):
     """
     Quickly search internal SOPs and ISO 27001 / KB documentation.

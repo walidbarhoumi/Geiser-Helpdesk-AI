@@ -33,13 +33,13 @@ const Sidebar: React.FC = () => {
       to: '/',
       icon: <LayoutDashboard size={18} />,
       label: 'Dashboard',
-      roles: [UserRole.USER, UserRole.AGENT, UserRole.ADMIN],
+      roles: [UserRole.USER, UserRole.AGENT, UserRole.SUPERVISOR, UserRole.ADMIN],
     },
     {
       to: '/tickets',
       icon: <Ticket size={18} />,
       label: 'Tickets',
-      roles: [UserRole.USER, UserRole.AGENT, UserRole.ADMIN],
+      roles: [UserRole.USER, UserRole.AGENT, UserRole.SUPERVISOR, UserRole.ADMIN],
       children: [
         { to: '/tickets', label: 'All Tickets' },
         { to: '/tickets/create', label: 'New Ticket' },
@@ -55,7 +55,7 @@ const Sidebar: React.FC = () => {
       to: '/agents',
       icon: <ShieldCheck size={18} />,
       label: 'Agents',
-      roles: [UserRole.ADMIN],
+      roles: [UserRole.SUPERVISOR, UserRole.ADMIN],
       children: [
         { to: '/agents', label: 'All Agents' },
         { to: '/agents/create', label: 'Add Agent' },
@@ -65,7 +65,7 @@ const Sidebar: React.FC = () => {
       to: '/teams',
       icon: <Users size={18} />,
       label: 'Teams',
-      roles: [UserRole.AGENT, UserRole.ADMIN],
+      roles: [UserRole.AGENT, UserRole.SUPERVISOR, UserRole.ADMIN],
       children: [
         { to: '/teams', label: 'All Teams' },
         { to: '/teams/create', label: 'Create Team' },
@@ -75,13 +75,19 @@ const Sidebar: React.FC = () => {
       to: '/rag',
       icon: <Database size={18} />,
       label: 'RAG Explorer',
-      roles: [UserRole.AGENT, UserRole.ADMIN],
+      roles: [UserRole.AGENT, UserRole.SUPERVISOR, UserRole.ADMIN],
+    },
+    {
+      to: '/audit',
+      icon: <ShieldCheck size={18} />,
+      label: 'Audit & Sécurité',
+      roles: [UserRole.SUPERVISOR, UserRole.ADMIN],
     },
     {
       to: '/profile',
       icon: <UserCircle size={18} />,
       label: 'Profile',
-      roles: [UserRole.USER, UserRole.AGENT, UserRole.ADMIN],
+      roles: [UserRole.USER, UserRole.AGENT, UserRole.SUPERVISOR, UserRole.ADMIN],
     },
   ];
 

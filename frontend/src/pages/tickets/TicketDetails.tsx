@@ -4,8 +4,7 @@ import {
   ArrowLeft, AlertTriangle, Shield, User,
   Bot, Sparkles, Loader2, CheckCircle2, XCircle,
   Activity, Zap, MessageSquare, Send,
-  Award, Paperclip
-
+  Award, Paperclip, Clock, History, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { type Ticket, type RoutingResult, UserRole } from '../../types';
 import api from '../../api/axios';
@@ -121,6 +120,7 @@ const TicketDetails: React.FC = () => {
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isSendingComment, setIsSendingComment] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(true);
 
   useEffect(() => { injectStyles(); }, []);
 
@@ -452,6 +452,139 @@ const TicketDetails: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* Action History / Audit Trail (ISO 27001) */}
+          <div className="td-glass" style={{ borderRadius: 24, padding: '1.75rem', marginTop: '1.5rem' }}>
+            <div
+              onClick={() => setHistoryOpen(!historyOpen)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                cursor: 'pointer', userSelect: 'none',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: 8,
+                  background: 'rgba(139,92,246,.15)', border: '1px solid rgba(139,92,246,.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa'
+                }}>
+                  <History size={15} />
+                </div>
+                <div>
+                  <span style={{ fontSize: '.78rem', fontWeight: 700, color: '#f1f5f9', letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                    Piste d'Audit & Historique des Actions
+                  </span>
+                  <span style={{ fontSize: '.68rem', color: 'rgba(255,255,255,.3)', marginLeft: '.5rem' }}>
+                    (ISO/IEC 27001:2013)
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                <span style={{
+                  padding: '2px 8px', borderRadius: 999,
+                  background: 'rgba(139,92,246,.15)', color: '#c4b5fd',
+                  fontSize: '.7rem', fontWeight: 700,
+                }}>
+                  {ticket.action_history?.length || 0} action{(ticket.action_history?.length || 0) > 1 ? 's' : ''}
+                </span>
+                {historyOpen ? <ChevronUp size={16} style={{ color: 'rgba(255,255,255,.4)' }} /> : <ChevronDown size={16} style={{ color: 'rgba(255,255,255,.4)' }} />}
+              </div>
+            </div>
+
+            {historyOpen && (
+              <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {(!ticket.action_history || ticket.action_history.length === 0) ? (
+                  <div style={{ fontSize: '.8rem', color: 'rgba(255,255,255,.3)', fontStyle: 'italic', padding: '1rem 0' }}>
+                    Aucune action enregistrée pour le moment.
+                  </div>
+                ) : (
+                  <div style={{ position: 'relative', paddingLeft: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    {/* Vertical line */}
+                    <div style={{
+                      position: 'absolute', left: '7px', top: '8px', bottom: '8px',
+                      width: '2px', background: 'linear-gradient(180deg, rgba(139,92,246,.4) 0%, rgba(139,92,246,.05) 100%)',
+                    }} />
+
+                    {ticket.action_history.map((action, idx) => {
+                      const actionConfig: Record<string, { label: string; color: string; bg: string }> = {
+                        CREATED: { label: 'Ticket Créé', color: '#34d399', bg: 'rgba(52,211,153,.12)' },
+                        STATUS_CHANGED: { label: 'Statut Modifié', color: '#60a5fa', bg: 'rgba(96,165,250,.12)' },
+                        AGENT_ASSIGNED: { label: 'Agent Assigné', color: '#a78bfa', bg: 'rgba(167,139,250,.12)' },
+                        AGENT_REASSIGNED: { label: 'Agent Réassigné', color: '#c084fc', bg: 'rgba(192,132,252,.12)' },
+                        PRIORITY_CHANGED: { label: 'Priorité Modifiée', color: '#fbbf24', bg: 'rgba(251,191,36,.12)' },
+                        RESPONSE_SENT: { label: 'Réponse Envoyée', color: '#38bdf8', bg: 'rgba(56,189,248,.12)' },
+                        RESOLUTION_RECORDED: { label: 'Résolution Validée', color: '#10b981', bg: 'rgba(16,185,129,.12)' },
+                        ATTACHMENT_UPLOADED: { label: 'Pièce Jointe Ajoutée', color: '#818cf8', bg: 'rgba(129,140,248,.12)' },
+                        SATISFACTION_SUBMITTED: { label: 'Satisfaction Notée', color: '#f59e0b', bg: 'rgba(245,158,11,.12)' },
+                        SLA_RECALCULATED: { label: 'SLA Recalculé', color: '#ec4899', bg: 'rgba(236,72,153,.12)' },
+                      };
+                      const cfg = actionConfig[action.action_type] || { label: action.action_type, color: '#94a3b8', bg: 'rgba(148,163,184,.1)' };
+
+                      return (
+                        <div key={action.id || idx} style={{ position: 'relative' }}>
+                          {/* Dot on line */}
+                          <div style={{
+                            position: 'absolute', left: '-1.5rem', top: '5px',
+                            width: '8px', height: '8px', borderRadius: '50%',
+                            background: cfg.color,
+                            boxShadow: `0 0 8px ${cfg.color}`,
+                            border: '2px solid #080812',
+                          }} />
+
+                          <div style={{
+                            padding: '.75rem 1rem', borderRadius: 12,
+                            background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.05)',
+                            display: 'flex', flexDirection: 'column', gap: '.4rem',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.5rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                                <span style={{
+                                  fontSize: '.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: 6,
+                                  background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}30`
+                                }}>
+                                  {cfg.label}
+                                </span>
+                                <span style={{ fontSize: '.78rem', fontWeight: 600, color: '#e2e8f0' }}>
+                                  {action.actor_name || 'Système'}
+                                </span>
+                                <span style={{ fontSize: '.68rem', color: 'rgba(255,255,255,.3)', textTransform: 'capitalize' }}>
+                                  ({action.actor_role?.toLowerCase() || 'système'})
+                                </span>
+                              </div>
+                              <span style={{ fontSize: '.68rem', color: 'rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <Clock size={11} />
+                                {action.timestamp ? format(new Date(action.timestamp), 'dd/MM/yyyy HH:mm:ss') : '—'}
+                              </span>
+                            </div>
+
+                            {action.comment && (
+                              <div style={{ fontSize: '.78rem', color: 'rgba(255,255,255,.7)', marginTop: '.2rem' }}>
+                                {action.comment}
+                              </div>
+                            )}
+
+                            {action.details && Object.keys(action.details).length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.4rem', marginTop: '.2rem' }}>
+                                {Object.entries(action.details).map(([k, v]) => (
+                                  <span key={k} style={{
+                                    fontSize: '.65rem', padding: '1px 6px', borderRadius: 4,
+                                    background: 'rgba(255,255,255,.04)', color: 'rgba(255,255,255,.45)',
+                                    fontFamily: 'monospace'
+                                  }}>
+                                    {k}: <strong style={{ color: 'rgba(255,255,255,.7)' }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</strong>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
