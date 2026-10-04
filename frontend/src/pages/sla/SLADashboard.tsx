@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom';
 import {
   AlertTriangle, Clock, Award, RefreshCw, Save,
   ArrowUpRight, CheckCircle2, XCircle, Loader2,
+  Pause, ShieldCheck, Activity, Bell,
 } from 'lucide-react';
 import api from '../../api/axios';
-import { type TicketPriority, TicketPriority as TicketPriorityEnum } from '../../types';
+import { type TicketPriority, TicketPriority as TicketPriorityEnum, type SLARiskOverview } from '../../types';
 import SLABadge from '../../components/sla/SLABadge';
 import { useAuth } from '../../store/authContext';
+import { useWebSocket } from '../../context/WebSocketContext';
 import { UserRole } from '../../types';
 
 type SLAPolicy = {
@@ -63,6 +65,7 @@ const SLADashboard: React.FC = () => {
   const { user } = useAuth();
   const [alerts, setAlerts] = useState<SLAAlert[]>([]);
   const [policies, setPolicies] = useState<SLAPolicy[]>([]);
+  const [riskOverview, setRiskOverview] = useState<SLARiskOverview | null>(null);
   const [policyEdits, setPolicyEdits] = useState<Record<string, { response: string; resolution: string }>>({});
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -74,20 +77,29 @@ const SLADashboard: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [alertsRes, policiesRes] = await Promise.all([
+      const [alertsRes, policiesRes, riskRes] = await Promise.allSettled([
         api.get<SLAAlert[]>('/sla/alerts'),
         api.get<SLAPolicy[]>('/sla/policies'),
+        api.get<SLARiskOverview>('/sla/risk'),
       ]);
-      setAlerts(alertsRes.data);
-      setPolicies(policiesRes.data);
-      const edits: Record<string, { response: string; resolution: string }> = {};
-      policiesRes.data.forEach(p => {
-        edits[p.priority] = {
-          response: String(p.response_time_hours),
-          resolution: String(p.resolution_time_hours),
-        };
-      });
-      setPolicyEdits(edits);
+
+      if (alertsRes.status === 'fulfilled') {
+        setAlerts(alertsRes.value.data);
+      }
+      if (policiesRes.status === 'fulfilled') {
+        setPolicies(policiesRes.value.data);
+        const edits: Record<string, { response: string; resolution: string }> = {};
+        policiesRes.value.data.forEach(p => {
+          edits[p.priority] = {
+            response: String(p.response_time_hours),
+            resolution: String(p.resolution_time_hours),
+          };
+        });
+        setPolicyEdits(edits);
+      }
+      if (riskRes.status === 'fulfilled') {
+        setRiskOverview(riskRes.value.data);
+      }
     } catch {
       /* silent */
     } finally {
@@ -95,7 +107,45 @@ const SLADashboard: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { subscribe } = useWebSocket();
+
+  const fetchSilent = useCallback(async () => {
+    try {
+      const [alertsRes, policiesRes, riskRes] = await Promise.allSettled([
+        api.get<SLAAlert[]>('/sla/alerts'),
+        api.get<SLAPolicy[]>('/sla/policies'),
+        api.get<SLARiskOverview>('/sla/risk'),
+      ]);
+      if (alertsRes.status === 'fulfilled') setAlerts(alertsRes.value.data);
+      if (policiesRes.status === 'fulfilled') setPolicies(policiesRes.value.data);
+      if (riskRes.status === 'fulfilled') setRiskOverview(riskRes.value.data);
+    } catch {
+      /* silent */
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Live WebSocket updates for real-time SLA risk monitoring
+  useEffect(() => {
+    const unsubAtRisk = subscribe('sla.at_risk', () => fetchSilent());
+    const unsubBreached = subscribe('sla.breached', () => fetchSilent());
+    const unsubPaused = subscribe('sla.paused', () => fetchSilent());
+    const unsubResumed = subscribe('sla.resumed', () => fetchSilent());
+    const unsubCompleted = subscribe('sla.completed', () => fetchSilent());
+    const unsubStatus = subscribe('ticket.status_changed', () => fetchSilent());
+
+    return () => {
+      unsubAtRisk();
+      unsubBreached();
+      unsubPaused();
+      unsubResumed();
+      unsubCompleted();
+      unsubStatus();
+    };
+  }, [subscribe, fetchSilent]);
 
   const handleScan = async () => {
     setScanning(true);
@@ -130,17 +180,23 @@ const SLADashboard: React.FC = () => {
     }
   };
 
-  const atRiskCount = alerts.filter(a => a.sla_status === 'AT_RISK').length;
-  const breachedCount = alerts.filter(a => a.sla_status === 'BREACHED').length;
-  const avgResolution = policies.length
-    ? (policies.reduce((s, p) => s + p.resolution_time_hours, 0) / policies.length).toFixed(1)
-    : '—';
+  // KPI Calculations
+  const onTrackCount = riskOverview?.kpis.on_track_count ?? 0;
+  const atRiskCount = riskOverview?.kpis.at_risk_count ?? alerts.filter(a => a.sla_status === 'AT_RISK').length;
+  const breachedCount = riskOverview?.kpis.breached_count ?? alerts.filter(a => a.sla_status === 'BREACHED').length;
+  const pausedCount = riskOverview?.kpis.paused_count ?? 0;
+  const compliancePct = riskOverview?.kpis.compliance_pct ?? (
+    (atRiskCount + breachedCount + onTrackCount) > 0
+      ? Math.round((onTrackCount / (onTrackCount + atRiskCount + breachedCount)) * 100)
+      : 100
+  );
 
   const kpis = [
-    { label: 'À Risque', value: atRiskCount, color: '#fb923c', icon: <Clock size={18} /> },
-    { label: 'Dépassés', value: breachedCount, color: '#f87171', icon: <AlertTriangle size={18} /> },
-    { label: 'Résolution Moy.', value: `${avgResolution}h`, color: '#8b5cf6', icon: <Award size={18} /> },
-    { label: 'Total Alertes', value: alerts.length, color: '#60a5fa', icon: <CheckCircle2 size={18} /> },
+    { label: 'Taux Conformité', value: `${compliancePct}%`, color: compliancePct >= 90 ? '#34d399' : '#fb923c', icon: <ShieldCheck size={18} /> },
+    { label: 'Dans les Délais', value: onTrackCount, color: '#34d399', icon: <CheckCircle2 size={18} /> },
+    { label: 'À Risque Critique', value: atRiskCount, color: '#fb923c', icon: <Clock size={18} /> },
+    { label: 'SLA Dépassés', value: breachedCount, color: '#f87171', icon: <AlertTriangle size={18} /> },
+    { label: 'En Pause (Attente)', value: pausedCount, color: '#a78bfa', icon: <Pause size={18} /> },
   ];
 
   return (
@@ -166,13 +222,13 @@ const SLADashboard: React.FC = () => {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', marginBottom: '.75rem' }}>
               <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#fb923c', animation: 'sla-pulse 2s infinite' }} />
-              <span style={{ fontSize: '.68rem', fontWeight: 700, color: 'rgba(251,146,60,.75)', letterSpacing: '.1em', textTransform: 'uppercase' }}>SLA Intelligentes</span>
+              <span style={{ fontSize: '.68rem', fontWeight: 700, color: 'rgba(251,146,60,.75)', letterSpacing: '.1em', textTransform: 'uppercase' }}>SLA Intelligentes & Détection de Risque</span>
             </div>
             <h1 style={{ fontFamily: "'DM Serif Display',serif", fontSize: 'clamp(1.75rem,3vw,2.5rem)', color: '#f1f5f9', margin: 0 }}>
               SLA <span style={{ fontStyle: 'italic', background: 'linear-gradient(135deg,#fb923c,#f87171)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Monitor</span>
             </h1>
-            <p style={{ color: 'rgba(255,255,255,.4)', marginTop: '.75rem', fontSize: '.9rem', maxWidth: 420 }}>
-              Surveillance en temps réel des accords de niveau de service. Alertes automatiques par email et dans l'application.
+            <p style={{ color: 'rgba(255,255,255,.4)', marginTop: '.75rem', fontSize: '.9rem', maxWidth: 460 }}>
+              Surveillance proactive en temps réel des accords de niveau de service. Détection automatique des seuils de risque (25%, 10%, 5%, 1h) et alertes multicanales Email/SMS.
             </p>
           </div>
           <div style={{ display: 'flex', gap: '.75rem' }}>
@@ -182,14 +238,14 @@ const SLADashboard: React.FC = () => {
             {user?.role === UserRole.ADMIN && (
               <button onClick={handleScan} disabled={scanning} style={{ display: 'flex', alignItems: 'center', gap: '.4rem', padding: '.7rem 1.25rem', background: 'linear-gradient(135deg,#7c3aed,#8b5cf6)', border: 'none', borderRadius: 12, color: '#fff', fontSize: '.8rem', fontWeight: 700, cursor: 'pointer', opacity: scanning ? .6 : 1 }}>
                 {scanning ? <Loader2 size={14} style={{ animation: 'sla-pulse 1s infinite' }} /> : <AlertTriangle size={14} />}
-                Lancer Scan
+                Lancer Scan Immédiat
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs 5 États */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: '1rem' }}>
         {kpis.map((k, i) => (
           <div key={i} className="sla-kpi" style={{ borderRadius: 18, padding: '1.25rem', background: 'rgba(15,15,25,.72)', border: '1px solid rgba(255,255,255,.07)', backdropFilter: 'blur(20px)', animation: `sla-in .4s ease ${i * 60}ms both` }}>
@@ -200,10 +256,61 @@ const SLADashboard: React.FC = () => {
         ))}
       </div>
 
+      {/* Queue des Tickets à Risque & Dépassés (STEP 4) */}
+      {riskOverview?.at_risk_tickets && riskOverview.at_risk_tickets.length > 0 && (
+        <div style={{ borderRadius: 20, overflow: 'hidden', background: 'rgba(15,15,25,.72)', border: '1px solid rgba(251,146,60,.2)', backdropFilter: 'blur(20px)' }}>
+          <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+              <Activity size={18} style={{ color: '#fb923c' }} />
+              <h2 style={{ margin: 0, fontSize: '.9rem', fontWeight: 700, color: '#f1f5f9' }}>File Prioritaire des Risques SLA Détectés</h2>
+            </div>
+            <span style={{ fontSize: '.75rem', color: '#fb923c', fontWeight: 600 }}>
+              {riskOverview.at_risk_tickets.length} dossier(s) critique(s)
+            </span>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,.06)' }}>
+                  {['Ticket', 'Priorité', 'État SLA', 'Seuil Franchi', 'Temps Restant', 'Échéance', ''].map((h, i) => (
+                    <th key={i} style={{ padding: '.85rem 1.25rem', textAlign: 'left', fontSize: '.65rem', fontWeight: 700, color: 'rgba(255,255,255,.25)', textTransform: 'uppercase', letterSpacing: '.07em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {riskOverview.at_risk_tickets.map((t, i) => (
+                  <tr key={t.ticket_id} className="sla-row" style={{ borderBottom: '1px solid rgba(255,255,255,.04)', animation: `sla-in .3s ease ${i * 40}ms both` }}>
+                    <td style={{ padding: '.85rem 1.25rem' }}>
+                      <div style={{ fontWeight: 600, color: '#f1f5f9', fontSize: '.875rem' }}>{t.subject || 'Sans objet'}</div>
+                      <span style={{ fontFamily: 'monospace', fontSize: '.68rem', color: 'rgba(139,92,246,.6)' }}>#{t.ticket_id.slice(-6).toUpperCase()}</span>
+                    </td>
+                    <td style={{ padding: '.85rem 1.25rem', fontSize: '.78rem', fontWeight: 700, color: t.priority === 'URGENT' ? '#f87171' : t.priority === 'HIGH' ? '#fb923c' : '#60a5fa' }}>{t.priority}</td>
+                    <td style={{ padding: '.85rem 1.25rem' }}><SLABadge status={t.sla_status} deadline={t.sla_deadline} /></td>
+                    <td style={{ padding: '.85rem 1.25rem', fontSize: '.78rem', color: '#fb923c', fontWeight: 600 }}>{t.crossed_threshold || 'Seuil critique'}</td>
+                    <td style={{ padding: '.85rem 1.25rem' }}><Countdown minutes={t.time_remaining_minutes ?? null} /></td>
+                    <td style={{ padding: '.85rem 1.25rem', fontSize: '.78rem', color: 'rgba(255,255,255,.35)' }}>
+                      {t.sla_deadline ? new Date(t.sla_deadline).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                    </td>
+                    <td style={{ padding: '.85rem 1.25rem' }}>
+                      <Link to={`/tickets/${t.ticket_id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '.3rem', padding: '.35rem .75rem', borderRadius: 8, background: 'rgba(251,146,60,.12)', border: '1px solid rgba(251,146,60,.25)', color: '#fdba74', fontSize: '.75rem', fontWeight: 600, textDecoration: 'none' }}>
+                        <ArrowUpRight size={12} /> Traiter
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Alerts Table */}
       <div style={{ borderRadius: 20, overflow: 'hidden', background: 'rgba(15,15,25,.72)', border: '1px solid rgba(255,255,255,.07)', backdropFilter: 'blur(20px)' }}>
         <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ margin: 0, fontSize: '.9rem', fontWeight: 700, color: '#f1f5f9' }}>Alertes Actives</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+            <Bell size={18} style={{ color: '#8b5cf6' }} />
+            <h2 style={{ margin: 0, fontSize: '.9rem', fontWeight: 700, color: '#f1f5f9' }}>Historique des Alertes Notifiées</h2>
+          </div>
           <span style={{ fontSize: '.75rem', color: 'rgba(255,255,255,.3)' }}>{alerts.length} ticket{alerts.length !== 1 ? 's' : ''}</span>
         </div>
         <div style={{ overflowX: 'auto' }}>

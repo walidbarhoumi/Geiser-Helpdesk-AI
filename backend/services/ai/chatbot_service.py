@@ -89,6 +89,8 @@ class ChatbotService:
             ]
             if top_result.sop:
                 suggested_actions.insert(0, f"📋 Appliquer {top_result.sop}")
+            elif top_result.source_title:
+                suggested_actions.insert(0, f"📄 Consulter {top_result.source_title[:28]}")
 
             if llm_reply and len(llm_reply.strip()) > 15:
                 return ChatResponse(
@@ -102,12 +104,22 @@ class ChatbotService:
             else:
                 # Fallback déterministe basé sur la solution éprouvée RAG si le LLM ne répond pas
                 direct_solution = top_result.last_assistant_solution or "Veuillez vérifier vos accès ou redémarrer le service concerné."
-                sop_text = f" (Procédure de référence : {top_result.sop})" if top_result.sop else ""
-                fallback_rag_reply = (
-                    f"🔍 **Diagnostic (Base de connaissances GEISER)** : Problème identifié lié à `{top_result.intent}`{sop_text}.\n\n"
-                    f"🛠️ **Procédure recommandée** :\n{direct_solution}\n\n"
-                    "Si le dysfonctionnement persiste, vous pouvez immédiatement créer un ticket pour prise en charge par notre équipe technique."
-                )
+                if top_result.source_title:
+                    source_str = f"Document interne : {top_result.source_title}"
+                    if top_result.source_page:
+                        source_str += f" (Page {top_result.source_page})"
+                    fallback_rag_reply = (
+                        f"📄 **Référence ({source_str})** :\n\n"
+                        f"{direct_solution}\n\n"
+                        "Si le dysfonctionnement persiste, vous pouvez immédiatement créer un ticket pour prise en charge par notre équipe technique."
+                    )
+                else:
+                    sop_text = f" (Procédure de référence : {top_result.sop})" if top_result.sop else ""
+                    fallback_rag_reply = (
+                        f"🔍 **Diagnostic (Base de connaissances GEISER)** : Problème identifié lié à `{top_result.intent}`{sop_text}.\n\n"
+                        f"🛠️ **Procédure recommandée** :\n{direct_solution}\n\n"
+                        "Si le dysfonctionnement persiste, vous pouvez immédiatement créer un ticket pour prise en charge par notre équipe technique."
+                    )
                 return ChatResponse(
                     reply=fallback_rag_reply,
                     suggested_actions=suggested_actions[:3],
@@ -343,12 +355,15 @@ RÈGLE DE VALIDATION :
 
         greeting_only_patterns = [
             r"^(salut|bonjour|hello|hi|hey|coucou|bonsoir)[\s!.?]*$",
-            r"^(comment vas[- ]tu|ça va|ca va|how are you|what'?s up)[\s!.?]*$",
+            r"^(comment vas[- ]tu|ça va|ca va|comment [çc]a va|how are you|what'?s up)[\s!.?]*$",
             r"^(merci|thanks|ok|test|bye|au revoir)[\s!.?]*$",
         ]
         subject_lower = subject.lower().strip()
         body_lower = body.lower().strip()
+        # Check body first; if body is trivial fall back to checking subject
         check_text = body_lower or subject_lower
+        # Also check subject+body combined when both are short
+        combined_short = f"{subject_lower} {body_lower}".strip()
         if len(check_text) < 30 and any(re.search(p, check_text) for p in greeting_only_patterns):
             return {
                 "is_valid_ticket": False,

@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from database.mongodb import get_database
-from core.deps import get_current_user
+from core.deps import get_current_user, RoleChecker
+from schemas.schemas import UserRole
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -15,6 +16,7 @@ from rag.retriever import RAGRetriever, SearchResult
 from rag.indexer import RAGIndexer
 from services.ai.rag_service import RAGService
 from services.ai.ollama_service import OllamaService
+from services.knowledge_service import KnowledgeService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -208,7 +210,11 @@ async def search_rag_faiss(
                     "first_user_query": r.first_user_query,
                     "last_assistant_solution": r.last_assistant_solution,
                     "solution_steps": r.solution_steps,
-                    "content": r.content
+                    "content": r.content,
+                    "source_title": r.source_title,
+                    "source_filename": r.source_filename,
+                    "source_page": r.source_page,
+                    "document_id": r.document_id
                 }
                 for r in results
             ]
@@ -342,3 +348,134 @@ async def get_rag_evaluations(
         "helpfulness_pct": helpfulness_pct,
         "evaluations": evals
     }
+
+
+# ──────────────────────────────────────────────
+# Gestion des Documents Internes RAG (STEP 3)
+# ──────────────────────────────────────────────
+
+@router.post("/documents", status_code=status.HTTP_201_CREATED)
+async def upload_knowledge_document(
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    description: Optional[str] = Form(None),
+    document_type: str = Form("PROCEDURE"),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR])),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """
+    Téléverse et ingère un document interne dans la base de connaissances RAG.
+    Réservé aux Administrateurs et Superviseurs (RBAC).
+
+    Pipeline complet :
+    1. Validation sécurisée du fichier (MIME whitelist, magic-bytes, taille max 10 Mo)
+    2. Stockage sous identifiant UUID avec protection anti-traversée
+    3. Extraction du texte (PDF, DOCX, TXT, MD)
+    4. Nettoyage et découpage en segments textuels (chunks)
+    5. Vectorisation sémantique et mise à jour synchronisée de l'index FAISS
+    6. Persistance des métadonnées dans MongoDB
+    """
+    service = KnowledgeService(db)
+    return await service.upload_document(
+        file=file,
+        title=title,
+        description=description,
+        document_type=document_type,
+        current_user=current_user
+    )
+
+
+@router.get("/documents")
+async def list_knowledge_documents(
+    status: Optional[str] = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT])),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """
+    Liste les documents de la base de connaissances avec pagination et filtrage par statut.
+    """
+    service = KnowledgeService(db)
+    return await service.list_documents(status=status, skip=skip, limit=limit)
+
+
+@router.get("/documents/{id}")
+async def get_knowledge_document(
+    id: str,
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT])),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """
+    Récupère les métadonnées détaillées d'un document interne.
+    """
+    service = KnowledgeService(db)
+    doc = await service.get_document(id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document interne introuvable.")
+    return doc
+
+
+@router.put("/documents/{id}")
+async def update_knowledge_document(
+    id: str,
+    file: Optional[UploadFile] = File(None),
+    title: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    document_type: Optional[str] = Form(None),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR])),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """
+    Met à jour un document interne. Si un nouveau fichier est fourni, le contenu précédent
+    est remplacé, les anciens vecteurs sont purgés et l'index FAISS est reconstruit.
+    """
+    service = KnowledgeService(db)
+    return await service.update_document(
+        doc_id=id,
+        file=file,
+        title=title,
+        description=description,
+        document_type=document_type,
+        current_user=current_user
+    )
+
+
+@router.delete("/documents/{id}")
+async def delete_knowledge_document(
+    id: str,
+    hard: bool = Query(False, description="Suppression définitive ou archivage"),
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR])),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """
+    Supprime ou archive un document interne de la base de connaissances.
+    Dans les deux cas, les vecteurs associés sont retirés de l'index FAISS
+    afin que le document ne soit plus récupérable par le chatbot.
+    """
+    service = KnowledgeService(db)
+    # Seul l'administrateur peut faire une suppression définitive sur le disque
+    role = current_user.get("role", "")
+    if hasattr(role, "value"):
+        role = role.value
+
+    if hard and role == UserRole.ADMIN.value:
+        await service.delete_document(id)
+        return {"success": True, "message": "Document définitivement supprimé et index FAISS actualisé."}
+    else:
+        await service.archive_document(id)
+        return {"success": True, "message": "Document archivé et index FAISS actualisé."}
+
+
+@router.post("/documents/{id}/archive")
+async def archive_knowledge_document(
+    id: str,
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR])),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """
+    Archive un document interne et met à jour l'index FAISS pour exclure ses vecteurs.
+    """
+    service = KnowledgeService(db)
+    await service.archive_document(id)
+    return {"success": True, "message": "Document archivé avec succès."}

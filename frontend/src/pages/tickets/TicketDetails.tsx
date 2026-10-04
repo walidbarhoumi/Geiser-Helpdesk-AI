@@ -4,11 +4,13 @@ import {
   ArrowLeft, AlertTriangle, Shield, User,
   Bot, Sparkles, Loader2, CheckCircle2, XCircle,
   Activity, Zap, MessageSquare, Send,
-  Award, Paperclip, Clock, History, ChevronDown, ChevronUp
+  Award, Paperclip, Clock, History, ChevronDown, ChevronUp,
+  Download, Upload
 } from 'lucide-react';
-import { type Ticket, type RoutingResult, UserRole } from '../../types';
+import { type Ticket, type RoutingResult, type Attachment, UserRole } from '../../types';
 import api from '../../api/axios';
 import { useAuth } from '../../store/authContext';
+import { useWebSocket } from '../../context/WebSocketContext';
 import { format } from 'date-fns';
 import SLABadge from '../../components/sla/SLABadge';
 import { type SLATicketDetail } from '../../types';
@@ -111,6 +113,7 @@ const TicketDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { subscribe } = useWebSocket();
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
   
@@ -121,6 +124,53 @@ const TicketDetails: React.FC = () => {
   const [commentText, setCommentText] = useState('');
   const [isSendingComment, setIsSendingComment] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(true);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+
+  const handleDownloadAttachment = async (at: Attachment | string) => {
+    try {
+      if (typeof at === 'string') {
+        window.open(at, '_blank');
+        return;
+      }
+      const response = await api.get(`/tickets/${id}/attachments/${at.id}/download`, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([response.data], { type: at.mime_type });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = at.original_filename || 'piece-jointe';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err: any) {
+      console.error('Failed to download attachment:', err);
+      alert('Erreur lors du téléchargement de la pièce jointe.');
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !id) return;
+    setIsUploadingAttachment(true);
+    setAttachmentError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await api.post(`/tickets/${id}/attachments`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await fetchTicket();
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || 'Erreur lors du téléversement du fichier.';
+      setAttachmentError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setIsUploadingAttachment(false);
+      e.target.value = '';
+    }
+  };
 
   useEffect(() => { injectStyles(); }, []);
 
@@ -142,6 +192,66 @@ const TicketDetails: React.FC = () => {
   useEffect(() => {
     if (id) fetchTicket();
   }, [id]);
+
+  // Live WebSocket real-time updates for this ticket
+  useEffect(() => {
+    if (!id) return;
+
+    const unsubStatus = subscribe('ticket.status_changed', (event) => {
+      const d = event.data;
+      if (d.ticket_id === id || d.id === id) {
+        setTicket((prev) => (prev ? { ...prev, status: d.new_status || d.status } : prev));
+      }
+    });
+
+    const unsubAssigned = subscribe('ticket.assigned', (event) => {
+      const d = event.data;
+      if (d.ticket_id === id || d.id === id) {
+        setTicket((prev) => (prev ? { ...prev, assigned_agent_id: d.agent_id } : prev));
+      }
+    });
+
+    const unsubPriority = subscribe('ticket.priority_changed', (event) => {
+      const d = event.data;
+      if (d.ticket_id === id || d.id === id) {
+        setTicket((prev) => (prev ? { ...prev, priority: d.new_priority || d.priority } : prev));
+      }
+    });
+
+    const unsubComment = subscribe('ticket.comment_added', (event) => {
+      const d = event.data;
+      if (d.ticket_id === id || d.id === id) {
+        setTicket((prev) => {
+          if (!prev) return prev;
+          const currentResponses = prev.responses || [];
+          if (currentResponses.some((r) => r.created_at === d.created_at && r.content === d.content)) {
+            return prev;
+          }
+          return {
+            ...prev,
+            responses: [...currentResponses, d],
+          };
+        });
+      }
+    });
+
+    const unsubSLA = subscribe('*', (event) => {
+      if (event.event && event.event.startsWith('sla.')) {
+        const d = event.data;
+        if (d.ticket_id === id || d.id === id) {
+          setTicket((prev) => (prev ? { ...prev, sla_status: d.sla_state || prev.sla_status } : prev));
+        }
+      }
+    });
+
+    return () => {
+      unsubStatus();
+      unsubAssigned();
+      unsubPriority();
+      unsubComment();
+      unsubSLA();
+    };
+  }, [id, subscribe]);
 
   const handleAutoRoute = async () => {
     if (!id) return;
@@ -379,22 +489,97 @@ const TicketDetails: React.FC = () => {
               <div style={{ fontSize: '.9375rem', color: 'rgba(255,255,255,.7)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{ticket.description}</div>
             </div>
             
-            {ticket.attachments && ticket.attachments.length > 0 && (
-              <div>
-                <h3 style={{ fontSize: '.72rem', fontWeight: 700, color: 'rgba(255,255,255,.28)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '1rem' }}>Attachments</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
-                  {ticket.attachments.map((at, i) => (
-                    <a key={i} href={at} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '.75rem', padding: '.75rem 1rem', borderRadius: 12, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.08)', color: 'rgba(255,255,255,.6)', textDecoration: 'none', fontSize: '.8125rem', transition: 'all .2s' }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = 'rgba(139,92,246,.4)'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,.08)'}
-                    >
-                      <Paperclip size={16} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{at.split('/').pop()}</span>
-                    </a>
-                  ))}
-                </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '.5rem' }}>
+                <h3 style={{ fontSize: '.72rem', fontWeight: 700, color: 'rgba(255,255,255,.28)', textTransform: 'uppercase', letterSpacing: '.08em', margin: 0, display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                  <Paperclip size={14} /> Pièces Jointes ({ticket.attachments?.length || 0})
+                </h3>
+                <label className="td-action-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '.5rem', padding: '.4rem .8rem', borderRadius: 10, fontSize: '.75rem', cursor: isUploadingAttachment ? 'not-allowed' : 'pointer', opacity: isUploadingAttachment ? 0.6 : 1 }}>
+                  {isUploadingAttachment ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                  <span>{isUploadingAttachment ? 'Envoi en cours...' : 'Ajouter un fichier'}</span>
+                  <input
+                    type="file"
+                    onChange={handleFileUpload}
+                    disabled={isUploadingAttachment}
+                    style={{ display: 'none' }}
+                  />
+                </label>
               </div>
-            )}
+
+              {attachmentError && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', padding: '.75rem 1rem', borderRadius: 10, background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.25)', color: '#f87171', fontSize: '.8125rem', marginBottom: '1rem' }}>
+                  <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                  <span>{attachmentError}</span>
+                </div>
+              )}
+
+              {ticket.attachments && ticket.attachments.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1rem' }}>
+                  {ticket.attachments.map((at, i) => {
+                    const isObj = typeof at === 'object' && at !== null;
+                    const fileName = isObj ? at.original_filename : String(at).split('/').pop() || 'Fichier';
+                    const fileSize = isObj && at.size_bytes ? (
+                      at.size_bytes < 1024 * 1024 
+                        ? `${(at.size_bytes / 1024).toFixed(1)} Ko` 
+                        : `${(at.size_bytes / (1024 * 1024)).toFixed(1)} Mo`
+                    ) : null;
+                    const mime = isObj ? at.mime_type : null;
+
+                    return (
+                      <div
+                        key={isObj ? at.id : i}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '.75rem',
+                          padding: '.75rem 1rem',
+                          borderRadius: 12,
+                          background: 'rgba(255,255,255,.03)',
+                          border: '1px solid rgba(255,255,255,.08)',
+                          transition: 'all .2s',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem', minWidth: 0, flex: 1 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(139,92,246,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c4b5fd', flexShrink: 0 }}>
+                            <Paperclip size={16} />
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: '.8125rem', fontWeight: 600, color: 'rgba(255,255,255,.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fileName}>
+                              {fileName}
+                            </div>
+                            <div style={{ fontSize: '.7rem', color: 'rgba(255,255,255,.4)', display: 'flex', gap: '.5rem', alignItems: 'center' }}>
+                              {fileSize && <span>{fileSize}</span>}
+                              {mime && <span style={{ opacity: 0.7 }}>• {mime.split('/')[1]?.toUpperCase() || mime}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleDownloadAttachment(at)}
+                          className="td-action-btn"
+                          title="Télécharger en toute sécurité"
+                          style={{
+                            padding: '.45rem',
+                            borderRadius: 8,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Download size={15} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ fontSize: '.8125rem', color: 'rgba(255,255,255,.3)', fontStyle: 'italic' }}>
+                  Aucune pièce jointe sur ce ticket.
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Activity / Messages */}

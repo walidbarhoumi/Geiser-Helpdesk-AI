@@ -24,6 +24,10 @@ class SearchResult(BaseModel):
     last_assistant_solution: Optional[str] = None
     solution_steps: List[str] = Field(default_factory=list)
     content: str
+    source_title: Optional[str] = None
+    source_filename: Optional[str] = None
+    source_page: Optional[int] = None
+    document_id: Optional[str] = None
 
 
 class RAGRetriever:
@@ -96,7 +100,11 @@ class RAGRetriever:
                 first_user_query=meta.get("first_user_query"),
                 last_assistant_solution=meta.get("last_assistant_solution"),
                 solution_steps=meta.get("solution_steps", []),
-                content=meta.get("text_snippet", "")
+                content=meta.get("text_snippet", ""),
+                source_title=meta.get("source_title"),
+                source_filename=meta.get("source_filename"),
+                source_page=meta.get("source_page"),
+                document_id=meta.get("document_id")
             )
             results.append(result)
 

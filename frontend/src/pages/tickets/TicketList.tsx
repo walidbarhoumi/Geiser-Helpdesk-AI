@@ -10,6 +10,7 @@ import { type Ticket, type RoutingResult, TicketStatus, TicketPriority, UserRole
 
 import api from '../../api/axios';
 import { useAuth } from '../../store/authContext';
+import { useWebSocket } from '../../context/WebSocketContext';
 import { format } from 'date-fns';
 import SLABadge from '../../components/sla/SLABadge';
 
@@ -133,6 +134,7 @@ const TicketList: React.FC = () => {
   const [filter, setFilter] = useState({ status: '', priority: '', search: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const { user } = useAuth();
+  const { subscribe } = useWebSocket();
   const ticketsPerPage = 10;
 
   useEffect(() => { injectStyles(); }, []);
@@ -150,6 +152,45 @@ const TicketList: React.FC = () => {
   };
 
   useEffect(() => { fetchTickets(); }, []);
+
+  // Live WebSocket Real-Time Updates
+  useEffect(() => {
+    const unsubCreated = subscribe('ticket.created', (event) => {
+      const newTicket = event.data as Ticket;
+      setTickets((prev) => {
+        if (prev.some((t) => t.id === newTicket.id)) return prev;
+        return [newTicket, ...prev];
+      });
+    });
+
+    const unsubStatus = subscribe('ticket.status_changed', (event) => {
+      const updated = event.data;
+      setTickets((prev) =>
+        prev.map((t) => (t.id === updated.ticket_id || t.id === updated.id ? { ...t, status: updated.new_status || updated.status } : t))
+      );
+    });
+
+    const unsubAssigned = subscribe('ticket.assigned', (event) => {
+      const updated = event.data;
+      setTickets((prev) =>
+        prev.map((t) => (t.id === updated.ticket_id || t.id === updated.id ? { ...t, assigned_agent_id: updated.agent_id } : t))
+      );
+    });
+
+    const unsubPriority = subscribe('ticket.priority_changed', (event) => {
+      const updated = event.data;
+      setTickets((prev) =>
+        prev.map((t) => (t.id === updated.ticket_id || t.id === updated.id ? { ...t, priority: updated.new_priority || updated.priority } : t))
+      );
+    });
+
+    return () => {
+      unsubCreated();
+      unsubStatus();
+      unsubAssigned();
+      unsubPriority();
+    };
+  }, [subscribe]);
 
   const handleAutoRoute = async (ticketId: string) => {
     setRoutingIds(prev => new Set(prev).add(ticketId));

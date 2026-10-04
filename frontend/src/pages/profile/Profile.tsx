@@ -1,17 +1,20 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
   User, Mail, Shield, Calendar, Key, Bell, Bot, Edit3,
   Zap, TrendingUp, Clock, Star, Lock, Smartphone,
   Globe, MapPin, ChevronRight, Activity, Award,
-  BarChart2, Cpu, AlertTriangle, Eye,
+  BarChart2, Cpu, AlertTriangle, Eye, CheckCircle,
+  XCircle, Loader,
 } from 'lucide-react';
 
 import { useAuth } from '../../store/authContext';
+import api from '../../api/axios';
 import { format } from 'date-fns';
 
-/* ─────────────────────────────────────────────
+
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Animated Counter
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const Counter: React.FC<{ to: number; suffix?: string; duration?: number }> = ({
   to, suffix = '', duration = 1400,
 }) => {
@@ -28,14 +31,115 @@ const Counter: React.FC<{ to: number; suffix?: string; duration?: number }> = ({
   return <>{val}{suffix}</>;
 };
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    MAIN COMPONENT
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const Profile: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'security'>('overview');
 
+  // â”€â”€ 2FA State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  type TwoFAFlow = 'idle' | 'enable_sent' | 'disable_pw' | 'disable_otp';
+  const [twoFAEnabled, setTwoFAEnabled] = useState<boolean | null>(null);
+  const [twoFAFlow, setTwoFAFlow] = useState<TwoFAFlow>('idle');
+  const [twoFACode, setTwoFACode] = useState('');
+  const [twoFAPassword, setTwoFAPassword] = useState('');
+  const [twoFALoading, setTwoFALoading] = useState(false);
+  const [twoFAError, setTwoFAError] = useState('');
+  const [twoFASuccess, setTwoFASuccess] = useState('');
+
+  // Fetch live 2FA status when Security tab is opened
+  const fetchTwoFAStatus = useCallback(async () => {
+    try {
+      const res = await api.get('/auth/2fa/status');
+      setTwoFAEnabled(res.data.enabled);
+    } catch {
+      setTwoFAEnabled(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'security') fetchTwoFAStatus();
+  }, [activeTab, fetchTwoFAStatus]);
+
+  // Reset 2FA wizard state whenever flow changes
+  const resetTwoFAWizard = () => {
+    setTwoFACode('');
+    setTwoFAPassword('');
+    setTwoFAError('');
+    setTwoFASuccess('');
+  };
+
+  // Enable Step 1 â€” Request OTP
+  const handleEnableRequest = async () => {
+    setTwoFALoading(true);
+    setTwoFAError('');
+    try {
+      await api.post('/auth/2fa/enable/request');
+      setTwoFAFlow('enable_sent');
+      setTwoFASuccess('A 6-digit code has been sent to your email.');
+    } catch (err: any) {
+      setTwoFAError(err.response?.data?.detail || 'Failed to send code.');
+    } finally {
+      setTwoFALoading(false);
+    }
+  };
+
+  // Enable Step 2 â€” Confirm OTP
+  const handleEnableConfirm = async () => {
+    if (twoFACode.length !== 6) { setTwoFAError('Enter the 6-digit code.'); return; }
+    setTwoFALoading(true);
+    setTwoFAError('');
+    try {
+      await api.post('/auth/2fa/enable/confirm', { code: twoFACode });
+      setTwoFAEnabled(true);
+      setTwoFAFlow('idle');
+      setTwoFASuccess('Two-factor authentication is now ENABLED âœ“');
+      resetTwoFAWizard();
+      setTwoFASuccess('Two-factor authentication is now ENABLED âœ“');
+    } catch (err: any) {
+      setTwoFAError(err.response?.data?.detail || 'Invalid or expired code.');
+    } finally {
+      setTwoFALoading(false);
+    }
+  };
+
+  // Disable Step 1 â€” Verify password then request OTP
+  const handleDisableRequest = async () => {
+    if (!twoFAPassword.trim()) { setTwoFAError('Enter your current password.'); return; }
+    setTwoFALoading(true);
+    setTwoFAError('');
+    try {
+      await api.post('/auth/2fa/disable/request', { password: twoFAPassword });
+      setTwoFAFlow('disable_sent');
+      setTwoFASuccess('Password verified. A code was sent to your email.');
+    } catch (err: any) {
+      setTwoFAError(err.response?.data?.detail || 'Incorrect password or request failed.');
+    } finally {
+      setTwoFALoading(false);
+    }
+  };
+
+  // Disable Step 2 â€” Confirm OTP
+  const handleDisableConfirm = async () => {
+    if (twoFACode.length !== 6) { setTwoFAError('Enter the 6-digit code.'); return; }
+    setTwoFALoading(true);
+    setTwoFAError('');
+    try {
+      await api.post('/auth/2fa/disable/confirm', { code: twoFACode });
+      setTwoFAEnabled(false);
+      setTwoFAFlow('idle');
+      resetTwoFAWizard();
+      setTwoFASuccess('Two-factor authentication has been DISABLED.');
+    } catch (err: any) {
+      setTwoFAError(err.response?.data?.detail || 'Invalid or expired code.');
+    } finally {
+      setTwoFALoading(false);
+    }
+  };
+
   if (!user) return null;
+
 
   const initial   = user.full_name?.charAt(0)?.toUpperCase() || 'U';
   const memberSince = format(new Date(user.created_at), 'MMM yyyy');
@@ -46,7 +150,7 @@ const Profile: React.FC = () => {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap');
 
-        /* ── RESET & ROOT ── */
+        /* â”€â”€ RESET & ROOT â”€â”€ */
         .p2-root *, .p2-root *::before, .p2-root *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         .p2-root {
@@ -58,7 +162,7 @@ const Profile: React.FC = () => {
           overflow-x: hidden;
         }
 
-        /* ── AMBIENT CANVAS ── */
+        /* â”€â”€ AMBIENT CANVAS â”€â”€ */
         .p2-ambient {
           position: fixed; inset: 0; pointer-events: none; z-index: 0;
           background:
@@ -67,7 +171,7 @@ const Profile: React.FC = () => {
             radial-gradient(ellipse 40% 60% at 50% 100%, rgba(139,92,246,0.07) 0%, transparent 55%);
         }
 
-        /* ── HERO BANNER ── */
+        /* â”€â”€ HERO BANNER â”€â”€ */
         .p2-hero {
           position: relative; z-index: 1;
           height: 260px; overflow: hidden;
@@ -97,7 +201,7 @@ const Profile: React.FC = () => {
           filter: blur(50px);
         }
 
-        /* ── HERO IDENTITY ROW ── */
+        /* â”€â”€ HERO IDENTITY ROW â”€â”€ */
         .p2-identity {
           position: relative; z-index: 2;
           padding: 0 48px;
@@ -191,7 +295,7 @@ const Profile: React.FC = () => {
           color: rgba(255,255,255,0.3);
         }
 
-        /* ── SCORE PILL ── */
+        /* â”€â”€ SCORE PILL â”€â”€ */
         .p2-score-pill {
           position: absolute; top: 24px; right: 48px; z-index: 2;
           display: flex; align-items: center; gap: 10px;
@@ -212,7 +316,7 @@ const Profile: React.FC = () => {
         .p2-score-label  { font-size: 10px; color: rgba(255,255,255,0.35); letter-spacing: 0.7px; text-transform: uppercase; }
         .p2-score-rank   { font-size: 11px; color: #a78bfa; font-weight: 500; }
 
-        /* ── TABS ── */
+        /* â”€â”€ TABS â”€â”€ */
         .p2-tabs-bar {
           position: relative; z-index: 1;
           padding: 28px 48px 0;
@@ -234,7 +338,7 @@ const Profile: React.FC = () => {
           border-bottom-color: #7c3aed !important;
         }
 
-        /* ── LAYOUT ── */
+        /* â”€â”€ LAYOUT â”€â”€ */
         .p2-body {
           position: relative; z-index: 1;
           padding: 32px 48px 56px;
@@ -247,7 +351,7 @@ const Profile: React.FC = () => {
         .p2-main { display: flex; flex-direction: column; gap: 18px; }
         .p2-side  { display: flex; flex-direction: column; gap: 18px; }
 
-        /* ── GLASS CARD ── */
+        /* â”€â”€ GLASS CARD â”€â”€ */
         .p2-card {
           background: rgba(255,255,255,0.025);
           border: 1px solid rgba(255,255,255,0.065);
@@ -281,7 +385,7 @@ const Profile: React.FC = () => {
 
         .p2-card-action:hover { color: #a78bfa; }
 
-        /* ── AI INSIGHT BANNER ── */
+        /* â”€â”€ AI INSIGHT BANNER â”€â”€ */
         .p2-ai-banner {
           position: relative;
           background: linear-gradient(120deg, rgba(109,40,217,0.12) 0%, rgba(79,70,229,0.08) 100%);
@@ -317,7 +421,7 @@ const Profile: React.FC = () => {
         .p2-ai-label { font-size: 10px; color: #7c3aed; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 4px; }
         .p2-ai-msg   { font-size: 13.5px; color: rgba(255,255,255,0.75); line-height: 1.55; }
 
-        /* ── INFO GRID ── */
+        /* â”€â”€ INFO GRID â”€â”€ */
         .p2-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
 
         .p2-field-label { font-size: 10px; letter-spacing: 1.1px; text-transform: uppercase; color: rgba(255,255,255,0.22); margin-bottom: 6px; }
@@ -340,7 +444,7 @@ const Profile: React.FC = () => {
         .p2-field-icon { color: rgba(255,255,255,0.22); flex-shrink: 0; }
         .p2-field-text { font-size: 13px; color: rgba(255,255,255,0.7); }
 
-        /* ── EDIT BTN ── */
+        /* â”€â”€ EDIT BTN â”€â”€ */
         .p2-edit-btn {
           display: inline-flex; align-items: center; gap: 8px;
           margin-top: 18px; padding: 12px 22px;
@@ -360,7 +464,7 @@ const Profile: React.FC = () => {
           box-shadow: 0 6px 24px rgba(109,40,217,0.2);
         }
 
-        /* ── SKILLS ── */
+        /* â”€â”€ SKILLS â”€â”€ */
         .p2-skills-wrap { display: flex; flex-wrap: wrap; gap: 9px; }
 
         .p2-skill {
@@ -382,7 +486,7 @@ const Profile: React.FC = () => {
 
         .p2-skill-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 
-        /* ── ANALYTICS GRID ── */
+        /* â”€â”€ ANALYTICS GRID â”€â”€ */
         .p2-analytics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; }
 
         .p2-metric-card {
@@ -427,7 +531,7 @@ const Profile: React.FC = () => {
         .p2-metric-fill.amber  { background: linear-gradient(to right, #92400e, #f59e0b); }
         .p2-metric-fill.blue   { background: linear-gradient(to right, #1d4ed8, #3b82f6); }
 
-        /* ── PERF BARS ── */
+        /* â”€â”€ PERF BARS â”€â”€ */
         .p2-perf-row { display: flex; align-items: center; gap: 14px; padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
         .p2-perf-row:last-child { border-bottom: none; }
         .p2-perf-lbl  { font-size: 12px; color: rgba(255,255,255,0.4); width: 160px; flex-shrink: 0; }
@@ -435,7 +539,7 @@ const Profile: React.FC = () => {
         .p2-perf-bar   { height: 100%; border-radius: 2px; transition: width 1.2s cubic-bezier(0.16,1,0.3,1); }
         .p2-perf-pct   { font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.65); width: 38px; text-align: right; }
 
-        /* ── TIMELINE ── */
+        /* â”€â”€ TIMELINE â”€â”€ */
         .p2-tl { position: relative; padding-left: 20px; }
         .p2-tl-spine { position: absolute; left: 6px; top: 8px; bottom: 8px; width: 1px; background: rgba(255,255,255,0.06); }
 
@@ -451,7 +555,7 @@ const Profile: React.FC = () => {
         .p2-tl-title { font-size: 13px; color: rgba(255,255,255,0.78); font-weight: 500; margin-bottom: 3px; }
         .p2-tl-meta  { font-size: 11px; color: rgba(255,255,255,0.28); }
 
-        /* ── SECURITY ── */
+        /* â”€â”€ SECURITY â”€â”€ */
         .p2-sec-score {
           display: flex; align-items: center; gap: 18px;
           padding: 16px; border-radius: 14px;
@@ -524,7 +628,7 @@ const Profile: React.FC = () => {
           transition: right 0.2s;
         }
 
-        /* ── SIDEBAR WIDGETS ── */
+        /* â”€â”€ SIDEBAR WIDGETS â”€â”€ */
         .p2-stat-row {
           display: flex; justify-content: space-between; align-items: center;
           padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
@@ -553,7 +657,7 @@ const Profile: React.FC = () => {
 
         .p2-insight strong { color: rgba(255,255,255,0.8); font-weight: 500; }
 
-        /* ── RESPONSIVE ── */
+        /* â”€â”€ RESPONSIVE â”€â”€ */
         @media (max-width: 1000px) {
           .p2-body { grid-template-columns: 1fr; padding: 24px 20px 40px; }
           .p2-identity { padding: 0 20px; }
@@ -569,24 +673,84 @@ const Profile: React.FC = () => {
           .p2-name { font-size: 26px; }
         }
 
-        /* ── SHIMMER ── */
+        /* â”€â”€ SHIMMER â”€â”€ */
         @keyframes p2Shimmer {
           0%   { background-position: -400px 0; }
           100% { background-position:  400px 0; }
         }
+
+        /* â”€â”€ 2FA WIZARD â”€â”€ */
+        .p2-2fa-status-badge {
+          display: inline-flex; align-items: center; gap: 7px;
+          padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
+          margin-bottom: 16px;
+        }
+        .p2-2fa-status-badge.enabled  { background: rgba(16,185,129,0.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.25); }
+        .p2-2fa-status-badge.disabled { background: rgba(245,158,11,0.10); color: #fcd34d; border: 1px solid rgba(245,158,11,0.2); }
+        .p2-2fa-status-badge.loading  { background: rgba(139,92,246,0.08); color: #a78bfa; border: 1px solid rgba(139,92,246,0.2); }
+
+        .p2-2fa-desc { font-size: 13px; color: rgba(255,255,255,0.5); line-height: 1.6; margin-bottom: 18px; }
+
+        .p2-2fa-input {
+          width: 100%; padding: 11px 14px;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 10px; color: #fff; font-size: 14px;
+          outline: none; font-family: 'DM Sans', sans-serif;
+          transition: border-color 0.2s;
+          margin-bottom: 10px;
+        }
+        .p2-2fa-input:focus { border-color: rgba(139,92,246,0.55); }
+        .p2-2fa-input::placeholder { color: rgba(255,255,255,0.25); }
+        .p2-2fa-input.otp { letter-spacing: 6px; font-size: 20px; text-align: center; font-weight: 600; }
+
+        .p2-2fa-btn {
+          display: inline-flex; align-items: center; gap: 8px;
+          padding: 11px 22px; border-radius: 10px; font-size: 13px; font-weight: 600;
+          cursor: pointer; border: none; font-family: 'DM Sans', sans-serif;
+          transition: all 0.2s; margin-right: 8px;
+        }
+        .p2-2fa-btn.primary {
+          background: linear-gradient(135deg, #7c3aed, #4f46e5); color: #fff;
+          box-shadow: 0 4px 16px rgba(124,58,237,0.35);
+        }
+        .p2-2fa-btn.primary:hover { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(124,58,237,0.45); }
+        .p2-2fa-btn.primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .p2-2fa-btn.secondary {
+          background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.55);
+          border: 1px solid rgba(255,255,255,0.1);
+        }
+        .p2-2fa-btn.secondary:hover { background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.8); }
+        .p2-2fa-btn.danger {
+          background: rgba(239,68,68,0.1); color: #fca5a5;
+          border: 1px solid rgba(239,68,68,0.2);
+        }
+        .p2-2fa-btn.danger:hover { background: rgba(239,68,68,0.18); }
+
+        .p2-2fa-alert {
+          padding: 10px 14px; border-radius: 9px; font-size: 12.5px;
+          display: flex; align-items: flex-start; gap: 9px; margin-bottom: 12px;
+        }
+        .p2-2fa-alert.error   { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); color: #fca5a5; }
+        .p2-2fa-alert.success { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2); color: #6ee7b7; }
+
+        .p2-2fa-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 18px 0; }
+
+        .p2-2fa-step-label { font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase; color: rgba(255,255,255,0.3); margin-bottom: 10px; }
       `}</style>
+
 
       <div className="p2-root">
         <div className="p2-ambient" />
 
-        {/* ── HERO ── */}
+        {/* â”€â”€ HERO â”€â”€ */}
         <div className="p2-hero">
           <div className="p2-hero-grid" />
           <div className="p2-hero-glow-l" />
           <div className="p2-hero-glow-r" />
         </div>
 
-        {/* ── SCORE PILL ── */}
+        {/* â”€â”€ SCORE PILL â”€â”€ */}
         <div style={{ position: 'relative', zIndex: 2 }}>
           <div className="p2-score-pill" style={{ position: 'absolute', top: -220, right: 48 }}>
             <Zap size={16} style={{ color: '#a78bfa' }} />
@@ -598,7 +762,7 @@ const Profile: React.FC = () => {
           </div>
         </div>
 
-        {/* ── IDENTITY ROW ── */}
+        {/* â”€â”€ IDENTITY ROW â”€â”€ */}
         <div className="p2-identity">
           <div className="p2-avatar-frame">
             <div className="p2-avatar-ring" />
@@ -607,11 +771,11 @@ const Profile: React.FC = () => {
           </div>
           <div className="p2-id-info">
             <div className="p2-name">{user.full_name || 'Anonymous User'}</div>
-            <div className="p2-title">AI Support Operations Specialist · Enterprise Team</div>
+            <div className="p2-title">AI Support Operations Specialist Â· Enterprise Team</div>
             <div className="p2-badges">
               <span className="p2-badge p2-badge-role">{user.role}</span>
-              <span className="p2-badge p2-badge-status">● Online</span>
-              <span className="p2-badge p2-badge-award">★ Top Performer</span>
+              <span className="p2-badge p2-badge-status">â— Online</span>
+              <span className="p2-badge p2-badge-award">â˜… Top Performer</span>
             </div>
             <div className="p2-hero-kpis">
               <div className="p2-kpi">
@@ -634,7 +798,7 @@ const Profile: React.FC = () => {
           </div>
         </div>
 
-        {/* ── TABS ── */}
+        {/* â”€â”€ TABS â”€â”€ */}
         <div className="p2-tabs-bar">
           {(['overview', 'analytics', 'security'] as const).map(t => (
             <button
@@ -647,20 +811,20 @@ const Profile: React.FC = () => {
           ))}
         </div>
 
-        {/* ── BODY ── */}
+        {/* â”€â”€ BODY â”€â”€ */}
         <div className="p2-body">
 
-          {/* ── MAIN ── */}
+          {/* â”€â”€ MAIN â”€â”€ */}
           <div className="p2-main">
 
             {/* AI Insight Banner */}
             <div className="p2-ai-banner">
               <div className="p2-ai-icon-wrap"><Bot size={17} /></div>
               <div className="p2-ai-text">
-                <div className="p2-ai-label">AI Insight · Today</div>
+                <div className="p2-ai-label">AI Insight Â· Today</div>
                 <div className="p2-ai-msg">
-                  SLA compliance improved <strong>+18%</strong> this week. Predicted high-productivity session ahead —
-                  infrastructure incident tickets align with your core expertise. Recommended: prioritize queue #4812–4819.
+                  SLA compliance improved <strong>+18%</strong> this week. Predicted high-productivity session ahead â€”
+                  infrastructure incident tickets align with your core expertise. Recommended: prioritize queue #4812â€“4819.
                 </div>
               </div>
             </div>
@@ -676,12 +840,12 @@ const Profile: React.FC = () => {
                   </div>
                   <div className="p2-info-grid">
                     {[
-                      { label: 'Full Name',    icon: <User     size={15} />, val: user.full_name || '—' },
+                      { label: 'Full Name',    icon: <User     size={15} />, val: user.full_name || 'â€”' },
                       { label: 'Email',        icon: <Mail     size={15} />, val: user.email           },
                       { label: 'Role Access',  icon: <Shield   size={15} />, val: user.role            },
                       { label: 'Joined',       icon: <Calendar size={15} />, val: joinedFull           },
                       { label: 'Location',     icon: <MapPin   size={15} />, val: 'Tunis, Tunisia'   },
-                      { label: 'Languages',    icon: <Globe    size={15} />, val: 'EN · DE · FR'       },
+                      { label: 'Languages',    icon: <Globe    size={15} />, val: 'EN Â· DE Â· FR'       },
                     ].map(f => (
                       <div key={f.label}>
                         <div className="p2-field-label">{f.label}</div>
@@ -732,7 +896,7 @@ const Profile: React.FC = () => {
                     {[
                       { dot: 'purple', title: 'Resolved critical ticket #4812',   meta: '12 min ago'  },
                       { dot: 'green',  title: 'Received 5-star customer rating',  meta: '1 hr ago'    },
-                      { dot: 'amber',  title: 'SLA alert — ticket #4805 escalated', meta: '2 hr ago'  },
+                      { dot: 'amber',  title: 'SLA alert â€” ticket #4805 escalated', meta: '2 hr ago'  },
                       { dot: 'blue',   title: 'Joined team standup (Q2 review)',   meta: 'Yesterday'   },
                       { dot: 'purple', title: 'AI recommendation accepted #4791', meta: '2 days ago'  },
                       { dot: 'green',  title: 'Security audit completed',          meta: '3 days ago'  },
@@ -798,36 +962,204 @@ const Profile: React.FC = () => {
             {/* SECURITY TAB */}
             {activeTab === 'security' && (
               <>
+                {/* â”€â”€ LIVE 2FA MANAGEMENT CARD â”€â”€ */}
+                <div className="p2-card">
+                  <div className="p2-card-hd">
+                    <div className="p2-card-title">Two-Factor Authentication</div>
+                    <div className={`p2-sec-icon ${twoFAEnabled ? 'green' : 'amber'}`} style={{ width: 28, height: 28 }}>
+                      <Key size={14} />
+                    </div>
+                  </div>
+
+                  {/* Status badge */}
+                  {twoFAEnabled === null ? (
+                    <div className="p2-2fa-status-badge loading">
+                      <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                      Checking statusâ€¦
+                    </div>
+                  ) : twoFAEnabled ? (
+                    <div className="p2-2fa-status-badge enabled">
+                      <CheckCircle size={13} /> 2FA ENABLED â€” email OTP
+                    </div>
+                  ) : (
+                    <div className="p2-2fa-status-badge disabled">
+                      <XCircle size={13} /> 2FA DISABLED
+                    </div>
+                  )}
+
+                  {/* Feedback messages */}
+                  {twoFASuccess && (
+                    <div className="p2-2fa-alert success">
+                      <CheckCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                      {twoFASuccess}
+                    </div>
+                  )}
+                  {twoFAError && (
+                    <div className="p2-2fa-alert error">
+                      <XCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                      {twoFAError}
+                    </div>
+                  )}
+
+                  {/* â”€â”€ IDLE â€” show action button â”€â”€ */}
+                  {twoFAFlow === 'idle' && twoFAEnabled !== null && (
+                    <>
+                      <p className="p2-2fa-desc">
+                        {twoFAEnabled
+                          ? 'Each login requires a 6-digit code sent to your registered email address. You can disable this extra layer of security below.'
+                          : 'Add an extra layer of security to your account. When enabled, every login requires a 6-digit code sent to your registered email address.'}
+                      </p>
+                      {!twoFAEnabled ? (
+                        <button
+                          className="p2-2fa-btn primary"
+                          onClick={() => { resetTwoFAWizard(); handleEnableRequest(); }}
+                          disabled={twoFALoading}
+                        >
+                          {twoFALoading ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Shield size={13} />}
+                          Enable Two-Factor Authentication
+                        </button>
+                      ) : (
+                        <button
+                          className="p2-2fa-btn danger"
+                          onClick={() => { resetTwoFAWizard(); setTwoFAFlow('disable_sent'); setTwoFAFlow('idle'); setTwoFAFlow('idle');
+                            // Go directly to password step
+                            setTwoFAFlow('disable_sent');
+                            setTwoFAFlow('idle');
+                            // Actually show the password input step first:
+                            setTwoFAError(''); setTwoFASuccess('');
+                            setTwoFAFlow('disable_sent');
+                          }}
+                        >
+                          <XCircle size={13} /> Disable 2FA
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {/* â”€â”€ ENABLE FLOW â€” OTP confirmation â”€â”€ */}
+                  {twoFAFlow === 'enable_sent' && (
+                    <>
+                      <div className="p2-2fa-divider" />
+                      <div className="p2-2fa-step-label">Step 2 â€” Enter the code sent to {user.email}</div>
+                      <input
+                        className="p2-2fa-input otp"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        placeholder="_ _ _ _ _ _"
+                        value={twoFACode}
+                        onChange={e => { setTwoFACode(e.target.value.replace(/\D/g, '').slice(0, 6)); setTwoFAError(''); }}
+                      />
+                      <div style={{ marginTop: 6 }}>
+                        <button
+                          className="p2-2fa-btn primary"
+                          onClick={handleEnableConfirm}
+                          disabled={twoFALoading || twoFACode.length !== 6}
+                        >
+                          {twoFALoading ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={13} />}
+                          Confirm & Activate 2FA
+                        </button>
+                        <button className="p2-2fa-btn secondary" onClick={() => { setTwoFAFlow('idle'); resetTwoFAWizard(); }}>
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* â”€â”€ DISABLE FLOW â€” Password + OTP â”€â”€ */}
+                  {twoFAFlow === 'disable_sent' && (
+                    <>
+                      <div className="p2-2fa-divider" />
+                      {/* Sub-step: has OTP been sent yet? Check if we need password first */}
+                      {!twoFASuccess.includes('code was sent') ? (
+                        <>
+                          <div className="p2-2fa-step-label">Step 1 â€” Verify your identity</div>
+                          <input
+                            className="p2-2fa-input"
+                            type="password"
+                            placeholder="Current password"
+                            value={twoFAPassword}
+                            onChange={e => { setTwoFAPassword(e.target.value); setTwoFAError(''); }}
+                            autoComplete="current-password"
+                          />
+                          <div style={{ marginTop: 6 }}>
+                            <button
+                              className="p2-2fa-btn danger"
+                              onClick={handleDisableRequest}
+                              disabled={twoFALoading || !twoFAPassword}
+                            >
+                              {twoFALoading ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Lock size={13} />}
+                              Verify & Send Code
+                            </button>
+                            <button className="p2-2fa-btn secondary" onClick={() => { setTwoFAFlow('idle'); resetTwoFAWizard(); }}>
+                              Cancel
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="p2-2fa-step-label">Step 2 â€” Enter the confirmation code sent to {user.email}</div>
+                          <input
+                            className="p2-2fa-input otp"
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={6}
+                            placeholder="_ _ _ _ _ _"
+                            value={twoFACode}
+                            onChange={e => { setTwoFACode(e.target.value.replace(/\D/g, '').slice(0, 6)); setTwoFAError(''); }}
+                          />
+                          <div style={{ marginTop: 6 }}>
+                            <button
+                              className="p2-2fa-btn danger"
+                              onClick={handleDisableConfirm}
+                              disabled={twoFALoading || twoFACode.length !== 6}
+                            >
+                              {twoFALoading ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <XCircle size={13} />}
+                              Confirm Disable 2FA
+                            </button>
+                            <button className="p2-2fa-btn secondary" onClick={() => { setTwoFAFlow('idle'); resetTwoFAWizard(); }}>
+                              Cancel
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* â”€â”€ OTHER SECURITY ITEMS (static info) â”€â”€ */}
                 <div className="p2-card">
                   <div className="p2-card-hd">
                     <div className="p2-card-title">Security Center</div>
                   </div>
 
-                  {/* Score Ring */}
                   <div className="p2-sec-score">
                     <div className="p2-sec-ring">
                       <svg width="62" height="62" viewBox="0 0 62 62">
                         <circle cx="31" cy="31" r="27" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="5" />
-                        <circle cx="31" cy="31" r="27" fill="none" stroke="#10b981" strokeWidth="5"
-                          strokeDasharray={`${2 * Math.PI * 27 * 0.94} ${2 * Math.PI * 27}`}
+                        <circle cx="31" cy="31" r="27" fill="none"
+                          stroke={twoFAEnabled ? '#10b981' : '#f59e0b'} strokeWidth="5"
+                          strokeDasharray={`${2 * Math.PI * 27 * (twoFAEnabled ? 0.94 : 0.72)} ${2 * Math.PI * 27}`}
                           strokeLinecap="round" />
                       </svg>
-                      <div className="p2-sec-ring-num">94</div>
+                      <div className="p2-sec-ring-num">{twoFAEnabled ? 94 : 72}</div>
                     </div>
                     <div className="p2-sec-info">
-                      <div className="p2-sec-name">Security Score — Excellent</div>
-                      <div className="p2-sec-desc">Last login detected from Tunis, TN · May 8, 2026</div>
+                      <div className="p2-sec-name">Security Score â€” {twoFAEnabled ? 'Excellent' : 'Good'}</div>
+                      <div className="p2-sec-desc">
+                        {twoFAEnabled
+                          ? '2FA active Â· Your account is well protected'
+                          : 'Enable 2FA to improve your security score to 94'}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Security Items */}
                   {[
-                    { icon: <Key       size={15} />, cls: 'amber',  label: 'Two-Factor Authentication', sub: 'Authenticator app active',  badge: 'on',   badgeText: 'Enabled'  },
-                    { icon: <Lock      size={15} />, cls: 'purple', label: 'Password Strength',         sub: 'Last changed 14 days ago',  badge: 'on',   badgeText: 'Strong'   },
-                    { icon: <Smartphone size={15}/>, cls: 'green',  label: 'Trusted Devices',           sub: '2 devices registered',      badge: 'on',   badgeText: '2 Active' },
-                    { icon: <Eye       size={15} />, cls: 'blue',   label: 'Login History',             sub: '5 recent sessions visible', badge: 'off',  badgeText: 'View'     },
-                    { icon: <Bell      size={15} />, cls: 'purple', label: 'Security Alerts',           sub: 'Suspicious login detection', badge: 'on',  badgeText: 'On'       },
-                    { icon: <AlertTriangle size={15}/>, cls: 'amber', label: 'Phishing Shield',         sub: 'AI-powered threat analysis', badge: 'on',  badgeText: 'Active'   },
+                    { icon: <Lock      size={15} />, cls: 'purple', label: 'Password Strength',   sub: 'Last changed 14 days ago',  badge: 'on',  badgeText: 'Strong'   },
+                    { icon: <Smartphone size={15}/>, cls: 'green',  label: 'Trusted Devices',    sub: '2 devices registered',     badge: 'on',  badgeText: '2 Active' },
+                    { icon: <Eye       size={15} />, cls: 'blue',   label: 'Login History',      sub: '5 recent sessions visible', badge: 'off', badgeText: 'View'     },
+                    { icon: <Bell      size={15} />, cls: 'purple', label: 'Security Alerts',    sub: 'Suspicious login detection', badge: 'on', badgeText: 'On'       },
+                    { icon: <AlertTriangle size={15}/>, cls: 'amber', label: 'Phishing Shield', sub: 'AI-powered threat analysis', badge: 'on', badgeText: 'Active'   },
                   ].map(s => (
                     <div key={s.label} className="p2-sec-row">
                       <div className="p2-sec-left">
@@ -870,7 +1202,7 @@ const Profile: React.FC = () => {
             )}
           </div>
 
-          {/* ── SIDEBAR ── */}
+          {/* â”€â”€ SIDEBAR â”€â”€ */}
           <div className="p2-side">
 
             {/* Account Card */}
@@ -880,8 +1212,8 @@ const Profile: React.FC = () => {
               <div className="p2-stat-row"><span className="p2-stat-lbl">Role level</span><span className="p2-stat-val">Level 2</span></div>
               <div className="p2-stat-row"><span className="p2-stat-lbl">Team</span><span className="p2-stat-val">Enterprise</span></div>
               <div className="p2-stat-row"><span className="p2-stat-lbl">Tickets today</span><span className="p2-stat-val">12</span></div>
-              <div className="p2-stat-row"><span className="p2-stat-lbl">Queue status</span><span className="p2-stat-val" style={{ color: '#34d399' }}>● Live</span></div>
-              <div className="p2-stat-row"><span className="p2-stat-lbl">AI mode</span><span className="p2-stat-val" style={{ color: '#a78bfa' }}>⚡ Assisted</span></div>
+              <div className="p2-stat-row"><span className="p2-stat-lbl">Queue status</span><span className="p2-stat-val" style={{ color: '#34d399' }}>â— Live</span></div>
+              <div className="p2-stat-row"><span className="p2-stat-lbl">AI mode</span><span className="p2-stat-val" style={{ color: '#a78bfa' }}>âš¡ Assisted</span></div>
             </div>
 
             {/* AI Insights */}
@@ -894,21 +1226,31 @@ const Profile: React.FC = () => {
                 <strong>High productivity predicted</strong> for the next 3 hours based on your rhythm patterns.
               </div>
               <div className="p2-insight">
-                <strong>SLA rate improved +18%</strong> — your infrastructure expertise is above team average.
+                <strong>SLA rate improved +18%</strong> â€” your infrastructure expertise is above team average.
               </div>
               <div className="p2-insight">
-                Recommended learning: <strong>AI Triage v2 module</strong> — estimated 23 min.
+                Recommended learning: <strong>AI Triage v2 module</strong> â€” estimated 23 min.
               </div>
               <div className="p2-insight">
                 <strong>Burnout risk: Low.</strong> Healthy workload balance detected this week.
               </div>
             </div>
 
-            {/* Security Score */}
+            {/* Security Score â€” live 2FA data */}
             <div className="p2-card">
               <div className="p2-card-title" style={{ marginBottom: 16 }}>Security at a Glance</div>
-              <div className="p2-stat-row"><span className="p2-stat-lbl">Security score</span><span className="p2-stat-val" style={{ color: '#6ee7b7' }}>94 / 100</span></div>
-              <div className="p2-stat-row"><span className="p2-stat-lbl">2FA status</span><span className="p2-stat-val" style={{ color: '#6ee7b7' }}>✓ Enabled</span></div>
+              <div className="p2-stat-row">
+                <span className="p2-stat-lbl">Security score</span>
+                <span className="p2-stat-val" style={{ color: twoFAEnabled ? '#6ee7b7' : '#fcd34d' }}>
+                  {twoFAEnabled ? '94 / 100' : '72 / 100'}
+                </span>
+              </div>
+              <div className="p2-stat-row">
+                <span className="p2-stat-lbl">2FA status</span>
+                <span className="p2-stat-val" style={{ color: twoFAEnabled ? '#6ee7b7' : '#fcd34d' }}>
+                  {twoFAEnabled === null ? 'â€¦' : twoFAEnabled ? 'âœ“ Enabled' : 'âœ— Disabled'}
+                </span>
+              </div>
               <div className="p2-stat-row"><span className="p2-stat-lbl">Last login</span><span className="p2-stat-val">Tunis, TN</span></div>
               <div className="p2-stat-row"><span className="p2-stat-lbl">Active sessions</span><span className="p2-stat-val">2</span></div>
               <div className="p2-stat-row"><span className="p2-stat-lbl">Threats blocked</span><span className="p2-stat-val" style={{ color: '#a78bfa' }}>0</span></div>
@@ -922,3 +1264,7 @@ const Profile: React.FC = () => {
 };
 
 export default Profile;
+
+
+
+

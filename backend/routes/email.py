@@ -33,6 +33,21 @@ async def email_channel_status(
     }
 
 
+@router.post("/test-connection")
+async def test_email_connection(
+    current_user=Depends(RoleChecker([UserRole.ADMIN])),
+):
+    """
+    Admin-only diagnostic test for IMAP inbound connection.
+    Tests TCP connectivity, SSL handshake, authentication, and folder listing.
+    Never exposes passwords or sensitive credentials in response or logs.
+    """
+    import asyncio
+    from services.imap_service import test_imap_connection
+    diag = await asyncio.to_thread(test_imap_connection)
+    return diag
+
+
 @router.post("/poll")
 async def trigger_email_poll(
     current_user=Depends(RoleChecker([UserRole.ADMIN])),

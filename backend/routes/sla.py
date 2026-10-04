@@ -3,12 +3,15 @@ from datetime import datetime
 from typing import List
 from database.mongodb import get_database
 from core.deps import get_current_user, RoleChecker
+from models.base import MongoModel
 from schemas.schemas import (
     SLAPolicyOut, SLAPolicyUpdate, SLAAlertOut,
     SLATicketDetailOut, SLAScanResult, SLACalculateRequest, SLACalculateResponse,
+    SLARiskConfigOut, SLARiskConfigUpdate, SLARiskOverviewOut, SLARiskEvaluationResult,
     UserRole, TicketPriority,
 )
 from services.sla_service import SLAService
+from services.sla_risk_service import SLARiskService
 
 router = APIRouter()
 
@@ -129,3 +132,61 @@ async def trigger_sla_scan(
     """Manually trigger SLA scan (admin/supervisor)."""
     stats = await SLAService(db).scan_tickets_and_alert()
     return stats
+
+
+# ──────────────────────────────────────────────
+# Surveillance Intelligente des Risques SLA (STEP 4)
+# ──────────────────────────────────────────────
+
+@router.get("/risk", response_model=SLARiskOverviewOut)
+async def get_sla_risk_overview(
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT])),
+    db=Depends(get_database),
+):
+    """
+    Vue d'ensemble des risques SLA pour superviseurs et managers :
+    - KPIs agrégés (SLA On Track, At Risk, Breached, Paused, % conformité, délai moyen)
+    - File d'attente prioritaire des tickets à risque et en dépassement
+    - Journal des alertes récentes
+    """
+    service = SLARiskService(db)
+    return await service.get_risk_overview()
+
+
+@router.get("/config", response_model=SLARiskConfigOut)
+async def get_sla_risk_config(
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR])),
+    db=Depends(get_database),
+):
+    """Récupère la configuration des seuils d'alerte SLA (pourcentage et temps absolu)."""
+    service = SLARiskService(db)
+    return await service.get_risk_config()
+
+
+@router.put("/config", response_model=SLARiskConfigOut)
+async def update_sla_risk_config(
+    body: SLARiskConfigUpdate,
+    current_user=Depends(RoleChecker([UserRole.ADMIN])),
+    db=Depends(get_database),
+):
+    """Mise à jour des seuils d'alerte et des canaux (Administrateurs uniquement)."""
+    service = SLARiskService(db)
+    update_data = body.dict(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Aucun champ de configuration fourni")
+    return await service.update_risk_config(update_data)
+
+
+@router.get("/tickets/{ticket_id}/risk", response_model=SLARiskEvaluationResult)
+async def evaluate_single_ticket_sla_risk(
+    ticket_id: str,
+    current_user=Depends(get_current_user),
+    db=Depends(get_database),
+):
+    """Évaluation précise en temps réel de l'état de risque SLA d'un ticket spécifique."""
+    ticket = await db.tickets.find_one({"_id": MongoModel.to_object_id(ticket_id)})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket introuvable")
+    service = SLARiskService(db)
+    return await service.evaluate_ticket_sla(ticket)
+

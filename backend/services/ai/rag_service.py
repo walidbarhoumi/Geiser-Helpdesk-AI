@@ -56,23 +56,40 @@ class RAGService:
     def build_rag_context(results: List[SearchResult]) -> str:
         """
         Formate les documents retrouvés sous forme de contexte textuel structuré pour le LLM.
+        Prend en charge à la fois les conversations résolues et les documents internes indexés.
         """
         if not results:
             return "Aucun document similaire pertinent trouvé dans la base de connaissances locale."
 
         blocks = []
         for i, res in enumerate(results, 1):
-            ctx_os = res.context.get("os", "N/A")
-            ctx_app = res.context.get("app", "N/A")
-            sop_info = f" | Procédure: {res.sop}" if res.sop else ""
+            if res.category == "knowledge_document" or res.source_title:
+                # Document interne ingéré dynamiquement
+                source_parts = [res.source_title or "Document interne"]
+                if res.source_filename:
+                    source_parts.append(f"Fichier : {res.source_filename}")
+                if res.source_page:
+                    source_parts.append(f"Page {res.source_page}")
+                source_line = " | ".join(source_parts)
 
-            block = (
-                f"--- EXEMPLE RÉSOLU #{i} (Pertinence: {int(res.score * 100)}%) ---\n"
-                f"Intention: {res.intent}{sop_info} | App: {ctx_app} | OS: {ctx_os}\n"
-                f"Symptôme initial: {res.first_user_query or 'N/A'}\n"
-                f"Solution validée: {res.last_assistant_solution or 'N/A'}\n"
-                f"Détails de l'échange :\n{res.content}"
-            )
+                block = (
+                    f"--- DOCUMENT INTERNE #{i} (Pertinence: {int(res.score * 100)}%) ---\n"
+                    f"Source : {source_line}\n"
+                    f"Contenu extrait :\n{res.content}"
+                )
+            else:
+                # Conversation du dataset statique de tickets résolus
+                ctx_os = res.context.get("os", "N/A")
+                ctx_app = res.context.get("app", "N/A")
+                sop_info = f" | Procédure: {res.sop}" if res.sop else ""
+
+                block = (
+                    f"--- EXEMPLE RÉSOLU #{i} (Pertinence: {int(res.score * 100)}%) ---\n"
+                    f"Intention: {res.intent}{sop_info} | App: {ctx_app} | OS: {ctx_os}\n"
+                    f"Symptôme initial: {res.first_user_query or 'N/A'}\n"
+                    f"Solution validée: {res.last_assistant_solution or 'N/A'}\n"
+                    f"Détails de l'échange :\n{res.content}"
+                )
             blocks.append(block)
 
         return "\n\n".join(blocks)
@@ -103,7 +120,7 @@ Réponds à l'utilisateur en appliquant scrupuleusement les consignes système e
 
     def reindex(self) -> Dict[str, Any]:
         """
-        Reconstruit l'index FAISS complet à partir du fichier source.
+        Reconstruit l'index FAISS complet à partir du fichier source statique.
         """
         indexer = RAGIndexer()
         return indexer.rebuild_index()

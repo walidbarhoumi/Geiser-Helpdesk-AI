@@ -330,16 +330,37 @@ class RoutingService:
         else:
             reason = f"Matched based on keywords: {', '.join(keywords[:5])}. No suitable agent found in the best matching team."
 
+        # Capture agent workload before increment for historical record
+        agent_workload_at_assignment = best_agent.get("workload", 0) if best_agent else 0
+
         result = {
             "ticket_id": ticket_id,
+            # Team & Agent identifiers (standardised field name)
             "selected_team": str(best_team["_id"]) if best_team else None,
-            "selected_agent": str(best_agent["_id"]) if best_agent else None,
+            "assigned_agent_id": str(best_agent["_id"]) if best_agent else None,
             "team_name": best_team.get("name") if best_team else "Unknown",
             "agent_name": best_agent.get("user_id") if best_agent else "Unassigned",
+            # Routing metadata
+            "routing_method": "ai" if keywords else "fallback",
             "confidence_score": confidence_score,
             "match_quality": match_quality,
             "routing_reason": reason,
             "scoring_details": best_details,
+            # Ticket context snapshot (for historical queries by category/priority)
+            "category": ticket.get("category"),
+            "subcategory": ticket.get("subcategory"),
+            "priority": ticket.get("priority"),
+            "impact": ticket.get("impact"),
+            "urgency": ticket.get("urgency"),
+            "sla_applied_rule": ticket.get("sla_applied_rule"),
+            "agent_workload_at_assignment": agent_workload_at_assignment,
+            "agent_skills_match_score": best_details.get("skill_score", 0.0),
+            # Outcome fields — updated later when ticket lifecycle events occur
+            "outcome_resolved_at": None,
+            "outcome_sla_respected": None,
+            "outcome_csat_score": None,
+            "outcome_reassigned": False,
+            "outcome_reassignment_count": 0,
             "created_at": datetime.utcnow()
         }
 
@@ -375,6 +396,16 @@ class RoutingService:
                         "$addToSet": {"reassigned_from_agent_ids": str(old_agent_id)},
                         "$inc": {"reassignment_count": 1}
                     }
+                )
+
+                # Mark the previous routing record as reassigned
+                await self.history.update_one(
+                    {"ticket_id": ticket_id, "outcome_reassigned": False},
+                    {
+                        "$set": {"outcome_reassigned": True},
+                        "$inc": {"outcome_reassignment_count": 1}
+                    },
+                    sort=[("created_at", -1)]
                 )
             else:
                 await self.tickets.update_one({"_id": oid}, {"$set": update_data})

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
 from typing import List, Optional
 from database.mongodb import get_database
 from core.deps import get_current_user, RoleChecker
@@ -7,13 +8,14 @@ from schemas.schemas import (
     StatusUpdateRequest, AssignAgentRequest, UserRole,
     TicketResolveRequest, SendTicketResponseRequest, SubmitSatisfactionRequest,
     PriorityCalculationRequest, PriorityCalculationResponse, PrioritySource,
-    TicketActionType
+    TicketActionType, AttachmentOut, AttachmentUploadResponse
 )
 from services.email_service import EmailService
 
 from controllers.ticket_controller import TicketController
 from services.ticket_service import TicketService
 from services.routing_service import RoutingService
+from services.attachment_service import AttachmentService
 from schemas.schemas import RoutingResult
 from models.base import MongoModel
 from core.config import settings
@@ -221,7 +223,20 @@ async def update_ticket(
             comment="Recalcul des délais SLA suite à modification"
         )
 
-    return await service.get_ticket(id)
+    final_ticket = await service.get_ticket(id)
+    if final_ticket and priority_changed:
+        try:
+            from websocket.dispatcher import event_dispatcher
+            await event_dispatcher.publish_ticket_priority_changed(
+                ticket=final_ticket,
+                old_priority=ticket.get("priority"),
+                new_priority=update_data.get("priority"),
+                actor=current_user
+            )
+        except Exception as ws_err:
+            logger.debug(f"[WS] Priority change event dispatch failed: {ws_err}")
+
+    return final_ticket
 
 
 @router.post("/{id}/send-response")
@@ -283,6 +298,17 @@ async def send_ticket_response(
         comment="Réponse officielle transmise au demandeur"
     )
 
+    # Live WebSocket dispatch (STEP 5)
+    try:
+        from websocket.dispatcher import event_dispatcher
+        await event_dispatcher.publish_ticket_comment(
+            ticket=ticket,
+            response_data=new_response,
+            actor=current_user
+        )
+    except Exception as ws_err:
+        logger.debug(f"[WS] Comment added event dispatch failed: {ws_err}")
+
     return {"success": True, "message": "Réponse envoyée avec succès par e-mail au demandeur."}
 
 
@@ -326,6 +352,20 @@ async def resolve_ticket(
     )
 
     updated_ticket = await service.get_ticket(id)
+
+    # Mise à jour du résultat dans routing_history
+    try:
+        sla_respected = updated_ticket.get("sla_status") not in ("BREACHED",) if updated_ticket else None
+        await db.routing_history.update_one(
+            {"ticket_id": id, "outcome_resolved_at": None},
+            {"$set": {
+                "outcome_resolved_at": now,
+                "outcome_sla_respected": sla_respected
+            }},
+            sort=[("created_at", -1)]
+        )
+    except Exception as resolve_err:
+        logger.warning(f"Impossible de mettre à jour routing_history avec le résultat de résolution pour le ticket {id} : {resolve_err}")
 
     # Notify user of resolution
     user = await db.users.find_one({"_id": MongoModel.to_object_id(ticket["user_id"])})
@@ -389,35 +429,97 @@ async def submit_ticket_satisfaction(
         comment=f"Évaluation CSAT enregistrée : {body.rating}/5"
     )
 
+    # Mise à jour du score CSAT dans routing_history pour l'apprentissage historique
+    try:
+        await db.routing_history.update_one(
+            {"ticket_id": id, "outcome_csat_score": None},
+            {"$set": {"outcome_csat_score": body.rating}},
+            sort=[("created_at", -1)]
+        )
+    except Exception as csat_err:
+        logger.warning(f"Impossible de mettre à jour routing_history avec le CSAT pour le ticket {id} : {csat_err}")
+
     return await service.get_ticket(id)
 
 
-@router.post("/{id}/attachments")
+@router.post(
+    "/{id}/attachments",
+    response_model=AttachmentUploadResponse,
+    summary="Téléverser une pièce jointe (sécurisé)",
+)
 async def upload_attachment(
     id: str,
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
-    db=Depends(get_database)
+    db=Depends(get_database),
 ):
-    file_path = os.path.join(settings.UPLOAD_DIR, f"{id}_{file.filename}")
-    with open(file_path, "wb") as buffer:
-        buffer.write(await file.read())
+    """Uploads a file attachment to a ticket.
 
-    await db.tickets.update_one(
-        {"_id": MongoModel.to_object_id(id)},
-        {"$addToSet": {"attachments": file_path}}
+    Security enforced:
+    - RBAC: only ticket owner, agents, supervisors or admins may upload.
+    - MIME whitelist: only approved types accepted.
+    - Size limit: configurable (default 10 MB).
+    - Magic-byte verification for common types.
+    - UUID-based stored filename: user-controlled names never touch the filesystem path.
+    """
+    service = AttachmentService(db)
+    attachment = await service.upload_attachment(
+        ticket_id=id, file=file, current_user=current_user
     )
+    return AttachmentUploadResponse(attachment=attachment)
 
-    # ISO 27001 Action History
-    await TicketService(db).record_ticket_action(
+
+@router.get(
+    "/{id}/attachments",
+    response_model=List[AttachmentOut],
+    summary="Lister les pièces jointes d'un ticket",
+)
+async def list_attachments(
+    id: str,
+    current_user=Depends(get_current_user),
+    db=Depends(get_database),
+):
+    """Returns the metadata list of all attachments for a ticket.
+    Access is restricted to the ticket owner, assigned agent, or admin/supervisor.
+    """
+    service = AttachmentService(db)
+    return await service.list_attachments(ticket_id=id, current_user=current_user)
+
+
+@router.get(
+    "/{id}/attachments/{attachment_id}/download",
+    summary="Télécharger une pièce jointe (sécurisé)",
+)
+async def download_attachment(
+    id: str,
+    attachment_id: str,
+    current_user=Depends(get_current_user),
+    db=Depends(get_database),
+):
+    """Securely serves a ticket attachment.
+
+    Security enforced:
+    - RBAC: only ticket owner, assigned agent, or admin/supervisor.
+    - Path traversal protection: resolved path must be inside UPLOAD_DIR.
+    - Content-Type set to the stored MIME type.
+    - X-Content-Type-Options: nosniff header to prevent MIME sniffing.
+    - Content-Disposition: attachment to force browser download.
+    """
+    service = AttachmentService(db)
+    file_path, original_filename, mime_type = await service.get_attachment_for_download(
         ticket_id=id,
-        action_type=TicketActionType.ATTACHMENT_UPLOADED.value,
-        actor_user=current_user,
-        details={"filename": file.filename, "path": file_path},
-        comment=f"Pièce jointe ajoutée : {file.filename}"
+        attachment_id=attachment_id,
+        current_user=current_user,
     )
-
-    return {"filename": file.filename, "path": file_path}
+    return FileResponse(
+        path=file_path,
+        media_type=mime_type,
+        filename=original_filename,
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.delete("/{id}")

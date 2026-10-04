@@ -55,22 +55,45 @@ async def startup_db_client():
     else:
         logger.warning(f"AI Engine warning: {ai_status.get('status')} - {ai_status.get('error', 'Model not found')}")
 
-    # SLA monitoring — scan every 15 minutes
+    # SLA monitoring — periodic scan and risk evaluator
     from sla_monitor import run_sla_scan
-    scheduler.add_job(run_sla_scan, "interval", minutes=15, id="sla_scan", replace_existing=True)
+    scheduler.add_job(
+        run_sla_scan,
+        "interval",
+        minutes=settings.SLA_SCAN_INTERVAL_MINUTES,
+        id="sla_scan",
+        replace_existing=True
+    )
 
     # Inbound email polling
     from email_monitor import run_email_poll
     from services.imap_service import is_imap_configured
     if is_imap_configured():
+        poll_interval = getattr(settings, "EMAIL_POLL_INTERVAL_SECONDS", 60)
         scheduler.add_job(
             run_email_poll, "interval",
-            minutes=settings.EMAIL_POLL_INTERVAL_MINUTES,
+            seconds=poll_interval,
             id="email_poll", replace_existing=True,
         )
-        logger.info(f"Email monitor scheduled (every {settings.EMAIL_POLL_INTERVAL_MINUTES} minutes)")
+        logger.info(f"Email monitor scheduled (every {poll_interval} seconds)")
     else:
         logger.info("Email monitor not scheduled — IMAP not configured (set IMAP_ENABLED=true)")
+
+    # Automated Backups & Disaster Recovery (STEP 6)
+    from backup.backup_scheduler import register_backup_schedule
+    register_backup_schedule(scheduler)
+
+    # Notification reliability worker (STEP 8)
+    from services.notification_worker import run_notification_worker
+    worker_interval = getattr(settings, "NOTIFICATION_WORKER_INTERVAL_SECONDS", 30)
+    scheduler.add_job(
+        run_notification_worker,
+        "interval",
+        seconds=worker_interval,
+        id="notification_worker",
+        replace_existing=True,
+    )
+    logger.info(f"Notification reliability worker scheduled (every {worker_interval} seconds)")
 
     scheduler.start()
     logger.info("SLA monitor scheduled (every 15 minutes)")

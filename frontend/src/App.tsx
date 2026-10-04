@@ -1,13 +1,14 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './store/authContext';
+import { WebSocketProvider, useWebSocket } from './context/WebSocketContext';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import { Toaster } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Ticket, Users, Bot, Shield, ShieldCheck,
   LogOut, ChevronRight, Bell, Search, Settings,
-  Activity, Command, Sparkles, Timer
+  Activity, Command, Sparkles, Timer, Database
 } from 'lucide-react';
 
 
@@ -30,6 +31,7 @@ import Profile from './pages/profile/Profile';
 import SLADashboard from './pages/sla/SLADashboard';
 import RAGDashboard from './pages/rag/RAGDashboard';
 import AuditTrail from './pages/audit/AuditTrail';
+import BackupDashboard from './pages/backups/BackupDashboard';
 
 import { UserRole } from './types';
 import { SupportChatbot } from './components/chat/SupportChatbot';
@@ -267,6 +269,7 @@ const Sidebar: React.FC = () => {
       items: [
         ...(user?.role === UserRole.ADMIN ? [{ to: '/users', icon: <Shield size={17} />, label: 'Users' }] : []),
         { to: '/audit', icon: <ShieldCheck size={17} />, label: 'Audit & Sécurité' },
+        { to: '/backups', icon: <Database size={17} />, label: 'Sauvegardes & PRA' },
       ]
     }] : []),
   ];
@@ -464,6 +467,9 @@ const Sidebar: React.FC = () => {
 ───────────────────────────────────────────── */
 const Navbar: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { status, notifications, unreadCount, markAllAsRead, clearNotifications } = useWebSocket();
+  const [showNotifs, setShowNotifs] = React.useState(false);
 
   const crumbMap: Record<string, string> = {
     '/': 'Dashboard',
@@ -480,6 +486,13 @@ const Navbar: React.FC = () => {
   };
 
   const currentPage = crumbMap[location.pathname] || 'Workspace';
+
+  const statusConfig = {
+    connected: { label: 'LIVE', color: '#10b981', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.2)' },
+    connecting: { label: 'CONNEXION...', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.2)' },
+    reconnecting: { label: 'RECONNEXION...', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.2)' },
+    disconnected: { label: 'HORS LIGNE', color: '#64748b', bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.2)' },
+  }[status] || { label: 'HORS LIGNE', color: '#64748b', bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.2)' };
 
   return (
     <header style={{
@@ -540,44 +553,113 @@ const Navbar: React.FC = () => {
       </div>
 
       {/* Right actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, position: 'relative' }}>
+        {/* Live WebSocket Status indicator */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: '6px',
           padding: '6px 12px',
-          background: 'rgba(16,185,129,0.08)',
-          border: '1px solid rgba(16,185,129,0.15)',
+          background: statusConfig.bg,
+          border: `1px solid ${statusConfig.border}`,
           borderRadius: '8px',
         }}>
-          <Activity size={12} style={{ color: '#10b981' }} />
-          <span style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(16,185,129,0.9)', letterSpacing: '0.04em' }}>
-            LIVE
+          <Activity size={12} style={{ color: statusConfig.color }} />
+          <span style={{ fontSize: '11px', fontWeight: 600, color: statusConfig.color, letterSpacing: '0.04em' }}>
+            {statusConfig.label}
           </span>
         </div>
 
-        <button style={{
-          width: '36px', height: '36px', borderRadius: '10px',
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(139,92,246,0.1)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', position: 'relative',
-          color: 'rgba(255,255,255,0.4)', transition: 'all 0.2s',
-        }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLElement).style.background = 'rgba(139,92,246,0.1)';
-            (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)';
+        {/* Bell Button */}
+        <button
+          onClick={() => {
+            setShowNotifs(!showNotifs);
+            if (!showNotifs) markAllAsRead();
           }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)';
-            (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)';
+          style={{
+            width: '36px', height: '36px', borderRadius: '10px',
+            background: showNotifs ? 'rgba(139,92,246,0.18)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${showNotifs ? 'rgba(139,92,246,0.4)' : 'rgba(139,92,246,0.1)'}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', position: 'relative',
+            color: showNotifs ? '#c4b5fd' : 'rgba(255,255,255,0.5)', transition: 'all 0.2s',
           }}
         >
           <Bell size={15} />
-          <div style={{
-            position: 'absolute', top: '8px', right: '8px',
-            width: '6px', height: '6px', borderRadius: '50%',
-            background: '#a78bfa', border: '1.5px solid #080812',
-          }} />
+          {unreadCount > 0 && (
+            <div style={{
+              position: 'absolute', top: '6px', right: '6px',
+              minWidth: '8px', height: '8px', borderRadius: '50%',
+              background: '#ef4444', border: '1.5px solid #080812',
+            }} />
+          )}
         </button>
+
+        {/* Notification Popover Dropdown */}
+        {showNotifs && (
+          <div style={{
+            position: 'absolute', top: '48px', right: 0, width: '340px',
+            background: 'rgba(15,15,28,0.96)', backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(139,92,246,0.25)', borderRadius: '14px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.5)', zIndex: 1000,
+            overflow: 'hidden', animation: 'sla-in .2s ease both',
+          }}>
+            <div style={{
+              padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: '#f1f5f9' }}>
+                Notifications en direct ({notifications.length})
+              </span>
+              {notifications.length > 0 && (
+                <button
+                  onClick={clearNotifications}
+                  style={{
+                    background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)',
+                    fontSize: '11px', cursor: 'pointer', padding: '2px 6px',
+                  }}
+                >
+                  Effacer
+                </button>
+              )}
+            </div>
+            <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+              {notifications.length === 0 ? (
+                <div style={{ padding: '24px 16px', textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>
+                  Aucune notification pour le moment.
+                </div>
+              ) : (
+                notifications.map((n) => (
+                  <div
+                    key={n.id}
+                    onClick={() => {
+                      if (n.ticket_id) {
+                        navigate(`/tickets/${n.ticket_id}`);
+                        setShowNotifs(false);
+                      }
+                    }}
+                    style={{
+                      padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)',
+                      cursor: n.ticket_id ? 'pointer' : 'default',
+                      background: n.read ? 'transparent' : 'rgba(139,92,246,0.05)',
+                      transition: 'background .15s',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(139,92,246,0.1)'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = n.read ? 'transparent' : 'rgba(139,92,246,0.05)'; }}
+                  >
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: n.type === 'error' ? '#f87171' : n.type === 'warning' ? '#fb923c' : '#f1f5f9' }}>
+                      {n.title}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '2px', lineHeight: 1.4 }}>
+                      {n.message}
+                    </div>
+                    <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.25)', marginTop: '4px' }}>
+                      {new Date(n.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
         <button style={{
           width: '36px', height: '36px', borderRadius: '10px',
@@ -586,16 +668,7 @@ const Navbar: React.FC = () => {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer',
           color: 'rgba(255,255,255,0.4)', transition: 'all 0.2s',
-        }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLElement).style.background = 'rgba(139,92,246,0.1)';
-            (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)';
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)';
-            (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)';
-          }}
-        >
+        }}>
           <Settings size={15} />
         </button>
       </div>
@@ -692,47 +765,52 @@ const App: React.FC = () => {
     <BrowserRouter>
       <GlobalStyles />
       <AuthProvider>
-        <CustomToaster />
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/verify-2fa" element={<Verify2FA />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
+        <WebSocketProvider>
+          <CustomToaster />
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/verify-2fa" element={<Verify2FA />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
-          <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/tickets" element={<TicketList />} />
-            <Route path="/tickets/create" element={<TicketCreate />} />
-            <Route path="/tickets/:id" element={<TicketDetails />} />
-            <Route path="/sla" element={<SLADashboard />} />
-            <Route path="/profile" element={<Profile />} />
+            <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/tickets" element={<TicketList />} />
+              <Route path="/tickets/create" element={<TicketCreate />} />
+              <Route path="/tickets/:id" element={<TicketDetails />} />
+              <Route path="/sla" element={<SLADashboard />} />
+              <Route path="/profile" element={<Profile />} />
 
-            <Route path="/users" element={
-              <ProtectedRoute roles={[UserRole.ADMIN]}><UserList /></ProtectedRoute>
-            } />
-            <Route path="/agents" element={
-              <ProtectedRoute roles={[UserRole.ADMIN, UserRole.SUPERVISOR]}><AgentList /></ProtectedRoute>
-            } />
-            <Route path="/agents/create" element={
-              <ProtectedRoute roles={[UserRole.ADMIN]}><AgentCreate /></ProtectedRoute>
-            } />
-            <Route path="/teams" element={
-              <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN, UserRole.SUPERVISOR]}><TeamList /></ProtectedRoute>
-            } />
-            <Route path="/teams/create" element={
-              <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN, UserRole.SUPERVISOR]}><TeamCreate /></ProtectedRoute>
-            } />
-            <Route path="/rag" element={
-              <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN, UserRole.SUPERVISOR]}><RAGDashboard /></ProtectedRoute>
-            } />
-            <Route path="/audit" element={
-              <ProtectedRoute roles={[UserRole.ADMIN, UserRole.SUPERVISOR]}><AuditTrail /></ProtectedRoute>
-            } />
-          </Route>
+              <Route path="/users" element={
+                <ProtectedRoute roles={[UserRole.ADMIN]}><UserList /></ProtectedRoute>
+              } />
+              <Route path="/agents" element={
+                <ProtectedRoute roles={[UserRole.ADMIN, UserRole.SUPERVISOR]}><AgentList /></ProtectedRoute>
+              } />
+              <Route path="/agents/create" element={
+                <ProtectedRoute roles={[UserRole.ADMIN]}><AgentCreate /></ProtectedRoute>
+              } />
+              <Route path="/teams" element={
+                <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN, UserRole.SUPERVISOR]}><TeamList /></ProtectedRoute>
+              } />
+              <Route path="/teams/create" element={
+                <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN, UserRole.SUPERVISOR]}><TeamCreate /></ProtectedRoute>
+              } />
+              <Route path="/rag" element={
+                <ProtectedRoute roles={[UserRole.AGENT, UserRole.ADMIN, UserRole.SUPERVISOR]}><RAGDashboard /></ProtectedRoute>
+              } />
+              <Route path="/audit" element={
+                <ProtectedRoute roles={[UserRole.ADMIN, UserRole.SUPERVISOR]}><AuditTrail /></ProtectedRoute>
+              } />
+              <Route path="/backups" element={
+                <ProtectedRoute roles={[UserRole.ADMIN, UserRole.SUPERVISOR]}><BackupDashboard /></ProtectedRoute>
+              } />
+            </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </WebSocketProvider>
       </AuthProvider>
     </BrowserRouter>
   );

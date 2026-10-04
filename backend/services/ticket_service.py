@@ -2,7 +2,7 @@ import uuid
 from typing import Optional, Dict, Any, List
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from schemas.schemas import TicketCreate, TicketStatus, TicketPriority, SLAStatus, TicketActionType
-from datetime import datetime
+from datetime import datetime, timedelta
 from models.base import MongoModel
 from bson import ObjectId
 import logging
@@ -19,6 +19,75 @@ class TicketService:
         self.tickets = db.tickets
         self.agents = db.agents
         self.users = db.users
+        self.routing_history = db.routing_history
+
+    async def _record_routing_history(
+        self,
+        ticket: dict,
+        agent: Optional[dict],
+        routing_method: str,
+        prior_record_id: Optional[str] = None
+    ) -> None:
+        """
+        Enregistre une décision de routage dans routing_history.
+
+        Parameters
+        ----------
+        ticket          : document ticket (déjà inséré en base, avec son _id)
+        agent           : document agent sélectionné (ou None)
+        routing_method  : "automatic" | "manual" | "reassignment" | "ai" | "fallback"
+        prior_record_id : si c'est une réassignation, marque l'ancien enregistrement
+        """
+        ticket_id = str(ticket.get("id") or ticket.get("_id", ""))
+
+        # Marquer l'ancien enregistrement comme réassigné si applicable
+        if prior_record_id:
+            try:
+                await self.routing_history.update_one(
+                    {"ticket_id": ticket_id, "outcome_reassigned": False},
+                    {
+                        "$set": {"outcome_reassigned": True},
+                        "$inc": {"outcome_reassignment_count": 1}
+                    },
+                    sort=[("created_at", -1)]
+                )
+            except Exception as e:
+                logger.warning(f"Impossible de marquer l'historique de routage précédent comme réassigné : {e}")
+
+        record = {
+            "ticket_id": ticket_id,
+            "selected_team": ticket.get("assigned_team_id"),
+            "assigned_agent_id": str(agent["_id"]) if agent else None,
+            "team_name": None,
+            "agent_name": agent.get("user_id") if agent else "Non assigné",
+            # Routing metadata
+            "routing_method": routing_method,
+            "confidence_score": None,
+            "match_quality": "Manual" if routing_method in ("manual", "reassignment") else "Auto",
+            "routing_reason": f"Assignation {routing_method} via TicketService",
+            "scoring_details": {},
+            # Ticket context snapshot
+            "category": ticket.get("category"),
+            "subcategory": ticket.get("subcategory"),
+            "priority": ticket.get("priority"),
+            "impact": ticket.get("impact"),
+            "urgency": ticket.get("urgency"),
+            "sla_applied_rule": ticket.get("sla_applied_rule"),
+            "agent_workload_at_assignment": agent.get("workload", 0) if agent else None,
+            "agent_skills_match_score": None,
+            # Outcome fields
+            "outcome_resolved_at": None,
+            "outcome_sla_respected": None,
+            "outcome_csat_score": None,
+            "outcome_reassigned": False,
+            "outcome_reassignment_count": 0,
+            "created_at": datetime.utcnow(),
+        }
+
+        try:
+            await self.routing_history.insert_one(record)
+        except Exception as e:
+            logger.error(f"Échec de l'enregistrement dans routing_history pour le ticket {ticket_id} : {e}")
 
     async def record_ticket_action(
         self,
@@ -207,6 +276,14 @@ class TicketService:
         except Exception as audit_err:
             logger.error(f"Failed to log ticket creation audit: {audit_err}")
 
+        # Enregistrement dans routing_history si un agent a été assigné automatiquement
+        if assigned_agent:
+            await self._record_routing_history(
+                ticket=formatted_ticket,
+                agent=assigned_agent,
+                routing_method="automatic"
+            )
+
         # Send Notifications (Email & SMS via NotificationService)
         try:
             from services.notification_service import NotificationService
@@ -214,7 +291,15 @@ class TicketService:
         except Exception as notify_err:
             logger.error(f"Failed to dispatch ticket creation notification: {notify_err}")
 
+        # Live WebSocket dispatch (STEP 5)
+        try:
+            from websocket.dispatcher import event_dispatcher
+            await event_dispatcher.publish_ticket_created(formatted_ticket, actor=actor_user)
+        except Exception as ws_err:
+            logger.debug(f"[WS] Failed to dispatch ticket creation live event: {ws_err}")
+
         return formatted_ticket
+
 
     async def _auto_assign_agent(self, category: str):
         """
@@ -252,12 +337,107 @@ class TicketService:
         new_status_val = new_status.value if hasattr(new_status, "value") else str(new_status)
         update_fields: dict = {"status": new_status_val, "updated_at": datetime.utcnow()}
 
-        if ticket and new_status not in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
-            sla_service = SLAService(self.db)
-            new_sla_status = await sla_service.compute_sla_status(ticket)
+        now = datetime.utcnow()
+
+        # ── SLA Lifecycle Transitions ─────────────────────────────────
+        sla_service = SLAService(self.db)
+        from services.audit_service import AuditService
+        from schemas.schemas import AuditEventCategory, AuditSeverity
+        audit_svc = AuditService(self.db)
+
+        # 1. Entering PENDING state -> PAUSE SLA
+        if new_status_val in (TicketStatus.PENDING.value, "PENDING"):
+            update_fields["sla_status"] = SLAStatus.PAUSED.value
+            update_fields["sla_paused_at"] = now
+            try:
+                import asyncio
+                asyncio.create_task(audit_svc.log_event(
+                    event_category=AuditEventCategory.SLA,
+                    event_type="SLA_PAUSED",
+                    severity=AuditSeverity.INFO,
+                    target_resource_type="ticket",
+                    target_resource_id=ticket_id,
+                    actor_id=str(actor_user.get("id")) if actor_user else "SYSTEM",
+                    actor_email=actor_user.get("email") if actor_user else "system@geiser.internal",
+                    actor_role=actor_user.get("role", "SYSTEM") if actor_user else "SYSTEM",
+                    status="SUCCESS",
+                    details={"ticket_id": ticket_id, "paused_at": now.isoformat()}
+                ))
+            except Exception:
+                pass
+
+        # 2. Leaving PENDING state -> RESUME SLA & Extend Deadlines
+        elif old_status in (TicketStatus.PENDING.value, "PENDING"):
+            paused_at = ticket.get("sla_paused_at")
+            pause_duration = (now - paused_at) if (paused_at and isinstance(paused_at, datetime)) else timedelta(0)
+            update_fields["sla_paused_at"] = None
+            update_fields["sla_total_paused_seconds"] = (ticket.get("sla_total_paused_seconds") or 0.0) + pause_duration.total_seconds()
+
+            eval_ticket = dict(ticket)
+            if ticket.get("sla_deadline"):
+                new_deadline = ticket["sla_deadline"] + pause_duration
+                update_fields["sla_deadline"] = new_deadline
+                eval_ticket["sla_deadline"] = new_deadline
+
+            if ticket.get("sla_response_deadline"):
+                update_fields["sla_response_deadline"] = ticket["sla_response_deadline"] + pause_duration
+
+            eval_ticket["status"] = new_status_val
+            new_sla_status = await sla_service.compute_sla_status(eval_ticket, now=now)
+            update_fields["sla_status"] = new_sla_status.value if hasattr(new_sla_status, "value") else new_sla_status
+
+            try:
+                import asyncio
+                asyncio.create_task(audit_svc.log_event(
+                    event_category=AuditEventCategory.SLA,
+                    event_type="SLA_RESUMED",
+                    severity=AuditSeverity.INFO,
+                    target_resource_type="ticket",
+                    target_resource_id=ticket_id,
+                    actor_id=str(actor_user.get("id")) if actor_user else "SYSTEM",
+                    actor_email=actor_user.get("email") if actor_user else "system@geiser.internal",
+                    actor_role=actor_user.get("role", "SYSTEM") if actor_user else "SYSTEM",
+                    status="SUCCESS",
+                    details={
+                        "ticket_id": ticket_id,
+                        "pause_seconds": pause_duration.total_seconds(),
+                        "new_deadline": update_fields.get("sla_deadline", "").isoformat() if isinstance(update_fields.get("sla_deadline"), datetime) else None
+                    }
+                ))
+            except Exception:
+                pass
+
+        # 3. Terminal State: RESOLVED or CLOSED -> COMPLETED or BREACHED
+        elif new_status_val in (TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value, "RESOLVED", "CLOSED"):
+            if ticket.get("sla_breached_at") or ticket.get("sla_status") == SLAStatus.BREACHED.value:
+                update_fields["sla_status"] = SLAStatus.BREACHED.value
+            else:
+                update_fields["sla_status"] = SLAStatus.COMPLETED.value
+                try:
+                    import asyncio
+                    asyncio.create_task(audit_svc.log_event(
+                        event_category=AuditEventCategory.SLA,
+                        event_type="SLA_COMPLETED",
+                        severity=AuditSeverity.INFO,
+                        target_resource_type="ticket",
+                        target_resource_id=ticket_id,
+                        actor_id=str(actor_user.get("id")) if actor_user else "SYSTEM",
+                        actor_email=actor_user.get("email") if actor_user else "system@geiser.internal",
+                        actor_role=actor_user.get("role", "SYSTEM") if actor_user else "SYSTEM",
+                        status="SUCCESS",
+                        details={"ticket_id": ticket_id, "resolved_at": now.isoformat()}
+                    ))
+                except Exception:
+                    pass
+
+        # 4. Active transition (e.g. OPEN -> IN_PROGRESS)
+        elif ticket:
+            eval_ticket = dict(ticket)
+            eval_ticket["status"] = new_status_val
+            new_sla_status = await sla_service.compute_sla_status(eval_ticket, now=now)
             update_fields["sla_status"] = new_sla_status.value if hasattr(new_sla_status, "value") else new_sla_status
             if new_sla_status == SLAStatus.BREACHED and ticket.get("sla_status") != SLAStatus.BREACHED.value:
-                update_fields["sla_breached_at"] = datetime.utcnow()
+                update_fields["sla_breached_at"] = now
 
         await self.tickets.update_one({"_id": oid}, {"$set": update_fields})
 
@@ -283,7 +463,37 @@ class TicketService:
                 )
             except Exception as notify_err:
                 logger.error(f"Failed to dispatch status change notification: {notify_err}")
-                
+
+            # Live WebSocket dispatch (STEP 5)
+            try:
+                from websocket.dispatcher import event_dispatcher
+                await event_dispatcher.publish_ticket_status_changed(
+                    ticket=updated_ticket,
+                    old_status=old_status,
+                    new_status=new_status_val,
+                    actor=actor_user
+                )
+            except Exception as ws_err:
+                logger.debug(f"[WS] Failed to dispatch status change live event: {ws_err}")
+
+        # Mise à jour du résultat dans routing_history lors de la résolution ou clôture
+        if new_status_val in (TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value):
+            try:
+                sla_respected = (
+                    updated_ticket.get("sla_status") not in ("BREACHED",)
+                    if updated_ticket else None
+                )
+                await self.routing_history.update_one(
+                    {"ticket_id": ticket_id, "outcome_resolved_at": None},
+                    {"$set": {
+                        "outcome_resolved_at": datetime.utcnow(),
+                        "outcome_sla_respected": sla_respected
+                    }},
+                    sort=[("created_at", -1)]
+                )
+            except Exception as e:
+                logger.warning(f"Impossible de mettre à jour routing_history avec le résultat pour le ticket {ticket_id} : {e}")
+
         return updated_ticket
 
     async def assign_agent(self, ticket_id: str, agent_id: str, actor_user: Optional[dict] = None):
@@ -372,7 +582,30 @@ class TicketService:
             {"$inc": {"workload": 1}}
         )
 
-        return await self.get_ticket(ticket_id)
+        # Enregistrement dans routing_history (après l'incrément de workload)
+        final_ticket = await self.get_ticket(ticket_id)
+        is_reassignment = bool(old_agent_id and str(old_agent_id) != str(agent_id))
+        await self._record_routing_history(
+            ticket=final_ticket,
+            agent=new_agent,
+            routing_method="reassignment" if is_reassignment else "manual",
+            prior_record_id=ticket_id if is_reassignment else None
+        )
+
+        # Live WebSocket dispatch (STEP 5)
+        if final_ticket:
+            try:
+                from websocket.dispatcher import event_dispatcher
+                await event_dispatcher.publish_ticket_assigned(
+                    ticket=final_ticket,
+                    agent_id=str(agent_id),
+                    prior_agent_id=str(old_agent_id) if is_reassignment else None,
+                    actor=actor_user
+                )
+            except Exception as ws_err:
+                logger.debug(f"[WS] Failed to dispatch assignment live event: {ws_err}")
+
+        return final_ticket
 
 
     async def delete_ticket(self, ticket_id: str, actor_user: Optional[dict] = None):
@@ -380,6 +613,17 @@ class TicketService:
         if not oid:
             return False
         ticket = await self.tickets.find_one({"_id": oid})
+
+        # ── Purge physical attachment files before deleting the ticket ──────
+        try:
+            from services.attachment_service import AttachmentService
+            att_svc = AttachmentService(self.db)
+            purged = await att_svc.delete_ticket_attachments(ticket_id)
+            if purged:
+                logger.info("Purged %d attachment(s) for ticket %s", purged, ticket_id)
+        except Exception as exc:
+            logger.error("Failed to purge attachments for ticket %s: %s", ticket_id, exc)
+
         result = await self.tickets.delete_one({"_id": oid})
         if result.deleted_count > 0:
             # ISO 27001 Security Audit Log

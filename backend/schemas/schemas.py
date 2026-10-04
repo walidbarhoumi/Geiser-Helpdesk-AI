@@ -1,6 +1,6 @@
 import uuid
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Any, Dict
+from typing import Optional, List, Any, Dict, Union
 from datetime import datetime
 from enum import Enum
 
@@ -15,6 +15,7 @@ class UserRole(str, Enum):
 class TicketStatus(str, Enum):
     OPEN = "OPEN"
     IN_PROGRESS = "IN_PROGRESS"
+    PENDING = "PENDING"
     RESOLVED = "RESOLVED"
     CLOSED = "CLOSED"
 
@@ -54,6 +55,8 @@ class SLAStatus(str, Enum):
     ON_TRACK = "ON_TRACK"
     AT_RISK = "AT_RISK"
     BREACHED = "BREACHED"
+    PAUSED = "PAUSED"
+    COMPLETED = "COMPLETED"
 
 
 
@@ -65,9 +68,12 @@ class UserBase(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
+    department: Optional[str] = None
     role: UserRole = UserRole.USER
     is_active: bool = True
     two_factor_enabled: bool = False
+    auth_provider: str = "local"
+    ldap_username: Optional[str] = None
 
 
 class UserCreate(UserBase):
@@ -78,6 +84,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
+    department: Optional[str] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
 
@@ -91,9 +98,12 @@ class UserOut(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
+    department: Optional[str] = None
     role: UserRole
     is_active: bool
     two_factor_enabled: bool = False
+    auth_provider: str = "local"
+    ldap_username: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -111,7 +121,7 @@ class Token(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str  # Can be an email address or an LDAP / Active Directory username
     password: str
 
 
@@ -141,6 +151,54 @@ class ResetPasswordRequest(BaseModel):
 
 class TokenRefresh(BaseModel):
     refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    """Optional payload during logout to explicitly revoke a refresh token as well as the bearer access token."""
+    refresh_token: Optional[str] = None
+
+
+class TokenBlacklistDoc(BaseModel):
+    """Document schema for revoked tokens stored in MongoDB token_blacklist collection."""
+    jti: str
+    user_id: Optional[str] = None
+    token_type: str = "access"  # "access" or "refresh"
+    expires_at: datetime
+    revoked_at: datetime = Field(default_factory=datetime.utcnow)
+    reason: str = "logout"
+
+
+# ──────────────────────────────────────────────
+
+# 2FA Management Schemas (Profile)
+# ──────────────────────────────────────────────
+
+class TwoFactorStatusOut(BaseModel):
+    """Current 2FA status for the authenticated user. Never exposes OTP code."""
+    enabled: bool
+    method: str = "email"
+
+
+class TwoFactorEnableRequest(BaseModel):
+    """Step 1 — request OTP to be sent to the user's registered email."""
+    pass  # No body required; user is identified via JWT
+
+
+class TwoFactorEnableConfirm(BaseModel):
+    """Step 2 — confirm activation with the OTP received by email."""
+    code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$",
+                      description="6-digit numeric OTP sent by email")
+
+
+class TwoFactorDisableRequest(BaseModel):
+    """Step 1 — request OTP to be sent to the user's registered email for disable confirmation."""
+    password: str = Field(..., min_length=1, description="Current account password for identity verification")
+
+
+class TwoFactorDisableConfirm(BaseModel):
+    """Step 2 — confirm disable with OTP received by email."""
+    code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$",
+                      description="6-digit numeric OTP sent by email")
 
 
 # ──────────────────────────────────────────────
@@ -313,6 +371,28 @@ class PriorityCalculationResponse(BaseModel):
     source: PrioritySource = PrioritySource.ITIL_MATRIX
 
 
+# ──────────────────────────────────────────────
+# Ticket Attachment Schemas
+# ──────────────────────────────────────────────
+
+class AttachmentOut(BaseModel):
+    """Structured metadata for a ticket attachment."""
+    id: str
+    ticket_id: str
+    original_filename: str
+    stored_filename: str
+    mime_type: str
+    size_bytes: int
+    uploaded_by: str
+    created_at: datetime
+
+
+class AttachmentUploadResponse(BaseModel):
+    """Response returned after a successful attachment upload."""
+    attachment: AttachmentOut
+    message: str = "Pièce jointe téléversée avec succès"
+
+
 class TicketOut(BaseModel):
     id: str
     subject: str
@@ -328,7 +408,7 @@ class TicketOut(BaseModel):
     user_id: str
     assigned_agent_id: Optional[str] = None
     routing_reason: Optional[str] = None
-    attachments: List[str] = []
+    attachments: List[Union[AttachmentOut, str]] = []
     keywords: List[str] = []
     resolution_note: Optional[str] = None
     responses: List[Dict[str, Any]] = []
@@ -386,6 +466,9 @@ class SLAAlertOut(BaseModel):
     time_remaining_minutes: Optional[int] = None
     assigned_agent_id: Optional[str] = None
     created_at: datetime
+    threshold_id: Optional[str] = None
+    channel: Optional[str] = None
+    recipient_email: Optional[str] = None
 
 
 class SLATicketDetailOut(BaseModel):
@@ -397,7 +480,12 @@ class SLATicketDetailOut(BaseModel):
     sla_deadline: Optional[datetime] = None
     sla_response_deadline: Optional[datetime] = None
     sla_breached_at: Optional[datetime] = None
+    sla_paused_at: Optional[datetime] = None
+    sla_total_paused_seconds: Optional[float] = None
     time_remaining_minutes: Optional[int] = None
+    remaining_seconds: Optional[float] = None
+    remaining_percentage: Optional[float] = None
+    crossed_threshold: Optional[str] = None
     pct_consumed: Optional[float] = None
     policy: Optional[dict] = None
     applied_rule: Optional[Dict[str, Any]] = None
@@ -426,9 +514,65 @@ class SLACalculateResponse(BaseModel):
 
 class SLAScanResult(BaseModel):
     scanned: int
+    on_track: int = 0
     at_risk: int
     breached: int
+    paused: int = 0
     alerted: int
+
+
+# ──────────────────────────────────────────────
+# SLA Risk & Alert Detection Schemas (Step 4)
+# ──────────────────────────────────────────────
+
+class SLAWarningThreshold(BaseModel):
+    id: str
+    type: str  # "percentage" or "time_minutes"
+    value: float
+    label: str
+
+
+class SLARiskConfigOut(BaseModel):
+    warning_thresholds: List[SLAWarningThreshold] = []
+    risk_alert_enabled: bool = True
+    breach_alert_enabled: bool = True
+    sms_alerts_enabled: bool = True
+    email_alerts_enabled: bool = True
+
+
+class SLARiskConfigUpdate(BaseModel):
+    warning_thresholds: Optional[List[SLAWarningThreshold]] = None
+    risk_alert_enabled: Optional[bool] = None
+    breach_alert_enabled: Optional[bool] = None
+    sms_alerts_enabled: Optional[bool] = None
+    email_alerts_enabled: Optional[bool] = None
+
+
+class SLARiskEvaluationResult(BaseModel):
+    ticket_id: str
+    state: SLAStatus
+    remaining_seconds: Optional[float] = None
+    remaining_percentage: Optional[float] = None
+    deadline: Optional[datetime] = None
+    crossed_threshold: Optional[str] = None
+    crossed_threshold_label: Optional[str] = None
+    should_alert: bool = False
+
+
+class SLARiskKPISummary(BaseModel):
+    total_active_slas: int
+    on_track_count: int
+    at_risk_count: int
+    breached_count: int
+    paused_count: int
+    compliance_pct: float
+    avg_remaining_minutes: float
+
+
+class SLARiskOverviewOut(BaseModel):
+    kpis: SLARiskKPISummary
+    at_risk_tickets: List[Dict[str, Any]] = []
+    active_alerts: List[Dict[str, Any]] = []
 
 
 class RoutingResult(BaseModel):
@@ -715,6 +859,13 @@ class NotificationOut(BaseModel):
     provider_message_id: Optional[str] = None
     event_type: Optional[str] = None
     error_detail: Optional[str] = None
+    recipient: Optional[str] = None
+    attempts: int = 0
+    max_retries: int = 5
+    next_retry_at: Optional[datetime] = None
+    error_type: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    retry_history: Optional[List[Dict[str, Any]]] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:

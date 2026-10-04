@@ -6,13 +6,18 @@ from core.deps import get_current_user
 from core.config import settings
 from schemas.schemas import ChatRequest, ChatResponse, ChatEscalateRequest, TicketOut
 from services.ai.chatbot_service import ChatbotService
+from core.rate_limit import get_rate_limiter_ai
 from motor.motor_asyncio import AsyncIOMotorDatabase
 import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.post("/message", response_model=ChatResponse)
+@router.post(
+    "/message",
+    response_model=ChatResponse,
+    dependencies=[Depends(get_rate_limiter_ai())],
+)
 async def send_chat_message(
     chat_data: ChatRequest,
     current_user=Depends(get_current_user),

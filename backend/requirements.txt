@@ -21,3 +21,5 @@ pypdf
 reportlab
 xlsxwriter
 twilio
+ldap3
+python-docx

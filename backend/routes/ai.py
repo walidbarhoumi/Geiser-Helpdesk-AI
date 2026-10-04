@@ -9,6 +9,7 @@ from schemas.schemas import (
     TicketClassificationRequest, TicketClassificationResponse
 )
 from services.ai.ai_classifier import AIClassifier
+from core.rate_limit import get_rate_limiter_ai
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 from typing import List, Optional
@@ -16,7 +17,11 @@ from typing import List, Optional
 router = APIRouter()
 
 
-@router.post("/classify-ticket", response_model=TicketClassificationResponse)
+@router.post(
+    "/classify-ticket",
+    response_model=TicketClassificationResponse,
+    dependencies=[Depends(get_rate_limiter_ai())],
+)
 async def classify_ticket(
     payload: TicketClassificationRequest,
     current_user=Depends(get_current_user)
@@ -37,7 +42,10 @@ async def get_ai_status(
     client = OllamaClient()
     return await client.check_health()
 
-@router.post("/tickets/{ticket_id}/generate-response")
+@router.post(
+    "/tickets/{ticket_id}/generate-response",
+    dependencies=[Depends(get_rate_limiter_ai())],
+)
 async def generate_ai_response(
     ticket_id: str,
     db: AsyncIOMotorDatabase = Depends(get_database),
@@ -53,7 +61,11 @@ async def generate_ai_response(
     ai_service = AIResponseService(db)
     return await ai_service.generate_full_response(ticket_id, ticket)
 
-@router.get("/tickets/{ticket_id}/intelligent-triage", response_model=IntelligentTriageResult)
+@router.get(
+    "/tickets/{ticket_id}/intelligent-triage",
+    response_model=IntelligentTriageResult,
+    dependencies=[Depends(get_rate_limiter_ai())],
+)
 async def get_intelligent_triage(
     ticket_id: str,
     db: AsyncIOMotorDatabase = Depends(get_database),

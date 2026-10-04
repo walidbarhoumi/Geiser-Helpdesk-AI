@@ -34,14 +34,38 @@ async def get_current_user(token: str = Depends(reusable_oauth2), db = Depends(g
         user_id: str = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        
+        # Enforce token type: refresh tokens must never be accepted as bearer access tokens
+        if payload.get("refresh") or payload.get("type") == "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token cannot be used as an access token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
     except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Check if token jti has been revoked
+    jti = payload.get("jti")
+    if jti:
+        revoked = await db.token_blacklist.find_one({"jti": jti}, {"_id": 1})
+        if revoked:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
     
     user_service = UserService(db)
     user = await user_service.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
+
 
 
 class RoleChecker:

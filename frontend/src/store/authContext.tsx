@@ -50,11 +50,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
-    setUser(null);
+  const logout = async () => {
+    const refreshToken = localStorage.getItem('refreshToken');
+    try {
+      // Invalidate JWT tokens server-side in MongoDB token_blacklist
+      await api.post('/auth/logout', {
+        refresh_token: refreshToken || undefined,
+      });
+    } catch (err) {
+      console.warn('Backend logout failed or token already invalid, proceeding with local cleanup:', err);
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      setUser(null);
+    }
   };
+
 
   const updateUser = (updatedUser: User) => {
     setUser(updatedUser);

@@ -90,6 +90,91 @@ class NotificationService:
         }
         res = await self.notifications.insert_one(doc)
         doc["_id"] = str(res.inserted_id)
+
+        # Live WebSocket dispatch (STEP 5)
+        try:
+            from websocket.dispatcher import event_dispatcher
+            await event_dispatcher.publish_notification(
+                user_id=str(user_id),
+                notification={
+                    "id": doc["_id"],
+                    "ticket_id": ticket_id,
+                    "title": title,
+                    "message": message,
+                    "channel": channel,
+                    "event_type": event_type,
+                    "created_at": doc["created_at"].isoformat() + "Z",
+                }
+            )
+        except Exception as ws_err:
+            logger.debug(f"[WS] Live notification dispatch skipped: {ws_err}")
+
+        return doc
+
+    async def queue_notification(
+        self,
+        user_id: str,
+        user_email: Optional[str],
+        ticket_id: Optional[str],
+        channel: str,
+        title: str,
+        message: str,
+        html_body: Optional[str] = None,
+        recipient: Optional[str] = None,
+        event_type: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+        max_retries: int = 5,
+        send_immediately: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Enqueues an outbound notification with idempotency guard.
+        If send_immediately is True, attempts synchronous dispatch and transitions
+        to SENT or RETRYING/DEAD_LETTER on failure.
+        """
+        target_recipient = recipient or user_email or str(user_id)
+
+        # Anti-duplication idempotency check
+        if idempotency_key:
+            existing = await self.notifications.find_one({"idempotency_key": idempotency_key})
+            if existing:
+                logger.info(f"[NotificationQueue] Duplicate suppressed by idempotency key: {idempotency_key}")
+                existing["_id"] = str(existing["_id"])
+                return existing
+
+        now = datetime.utcnow()
+        doc = {
+            "user_id": str(user_id),
+            "user_email": user_email,
+            "ticket_id": ticket_id,
+            "channel": channel.upper(),
+            "event_type": event_type,
+            "recipient": target_recipient,
+            "title": title,
+            "message": message,
+            "html_body": html_body,
+            "status": "PENDING",
+            "attempts": 0,
+            "max_retries": max_retries,
+            "next_retry_at": now,
+            "retry_history": [],
+            "error_detail": None,
+            "error_type": None,
+            "idempotency_key": idempotency_key,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+        res = await self.notifications.insert_one(doc)
+        doc["_id"] = res.inserted_id
+
+        if send_immediately:
+            from services.notification_worker import NotificationWorker
+            worker = NotificationWorker(self.db)
+            processed = await worker.process_single_notification(doc)
+            processed["_id"] = str(processed["_id"])
+            return processed
+
+        doc["_id"] = str(doc["_id"])
         return doc
 
     async def _find_user(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -225,16 +310,19 @@ class NotificationService:
 
         if user_email:
             try:
-                EmailService.send_email(user_email, title, html_body)
-                await self._record_notification(
+                idem_key = f"TICKET_CREATED:EMAIL:{ticket_id}:{user_email}"
+                await self.queue_notification(
                     user_id=user_id,
                     user_email=user_email,
                     ticket_id=ticket_id,
                     channel="EMAIL",
                     title=title,
                     message=f"Ticket #{ticket_id[-6:].upper()} créé avec succès.",
+                    html_body=html_body,
+                    recipient=user_email,
                     event_type="TICKET_CREATED",
-                    recipient=user_email
+                    idempotency_key=idem_key,
+                    send_immediately=True,
                 )
             except Exception as e:
                 logger.error(f"[EMAIL NOTIFY] Error notifying ticket created: {e}")
@@ -298,16 +386,19 @@ class NotificationService:
 
         if user_email:
             try:
-                EmailService.send_email(user_email, title, html_body)
-                await self._record_notification(
+                idem_key = f"STATUS_{new_status}:EMAIL:{ticket_id}:{user_email}:{datetime.utcnow().strftime('%Y%m%d%H%M')}"
+                await self.queue_notification(
                     user_id=user_id,
                     user_email=user_email,
                     ticket_id=ticket_id,
                     channel="EMAIL",
                     title=title,
                     message=f"Statut du ticket changé en {label_new}",
+                    html_body=html_body,
+                    recipient=user_email,
                     event_type=f"STATUS_{new_status}",
-                    recipient=user_email
+                    idempotency_key=idem_key,
+                    send_immediately=True,
                 )
             except Exception as e:
                 logger.error(f"[EMAIL NOTIFY] Error notifying status change: {e}")
@@ -342,16 +433,19 @@ class NotificationService:
                 agent_user = await self._find_user(agent["user_id"])
                 if agent_user and agent_user.get("email"):
                     try:
-                        EmailService.send_email(agent_user["email"], title, f"<h3>{title}</h3><p>{msg}</p>")
-                        await self._record_notification(
-                            str(agent_user["_id"]),
-                            agent_user["email"],
-                            ticket_id,
-                            "EMAIL",
-                            title,
-                            msg,
+                        idem_key = f"{event_type}:EMAIL:{ticket_id}:{agent_user['email']}"
+                        await self.queue_notification(
+                            user_id=str(agent_user["_id"]),
+                            user_email=agent_user["email"],
+                            ticket_id=ticket_id,
+                            channel="EMAIL",
+                            title=title,
+                            message=msg,
+                            html_body=f"<h3>{title}</h3><p>{msg}</p>",
+                            recipient=agent_user["email"],
                             event_type=event_type,
-                            recipient=agent_user["email"]
+                            idempotency_key=idem_key,
+                            send_immediately=True,
                         )
                     except Exception as e:
                         logger.error(f"[EMAIL NOTIFY] Error notifying SLA alert: {e}")
@@ -414,9 +508,20 @@ class NotificationService:
         )
         return result
 
-    async def get_recent_notifications(self, limit: int = 50) -> List[NotificationOut]:
-        """Retrieves recent notifications from database."""
-        cursor = self.notifications.find().sort("created_at", -1).limit(limit)
+    async def get_recent_notifications(
+        self,
+        limit: int = 50,
+        status: Optional[str] = None,
+        channel: Optional[str] = None
+    ) -> List[NotificationOut]:
+        """Retrieves recent notifications from database with optional status/channel filters."""
+        query: Dict[str, Any] = {}
+        if status:
+            query["status"] = status.upper()
+        if channel:
+            query["channel"] = channel.upper()
+
+        cursor = self.notifications.find(query).sort("created_at", -1).limit(limit)
         docs = await cursor.to_list(limit)
         results = []
         for d in docs:
@@ -433,6 +538,13 @@ class NotificationService:
                 provider_message_id=d.get("provider_message_id"),
                 event_type=d.get("event_type"),
                 error_detail=d.get("error_detail"),
+                recipient=d.get("recipient"),
+                attempts=d.get("attempts", 0),
+                max_retries=d.get("max_retries", 5),
+                next_retry_at=d.get("next_retry_at"),
+                error_type=d.get("error_type"),
+                idempotency_key=d.get("idempotency_key"),
+                retry_history=d.get("retry_history"),
                 created_at=d.get("created_at", datetime.utcnow())
             ))
         return results

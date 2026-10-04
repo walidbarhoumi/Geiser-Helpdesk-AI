@@ -9,6 +9,7 @@ export type UserRole = typeof UserRole[keyof typeof UserRole];
 export const TicketStatus = {
   OPEN: "OPEN",
   IN_PROGRESS: "IN_PROGRESS",
+  PENDING: "PENDING",
   RESOLVED: "RESOLVED",
   CLOSED: "CLOSED",
 } as const;
@@ -54,6 +55,8 @@ export const SLAStatus = {
   ON_TRACK: "ON_TRACK",
   AT_RISK: "AT_RISK",
   BREACHED: "BREACHED",
+  PAUSED: "PAUSED",
+  COMPLETED: "COMPLETED",
 } as const;
 export type SLAStatus = typeof SLAStatus[keyof typeof SLAStatus];
 
@@ -75,6 +78,64 @@ export type SLATicketDetail = {
   time_remaining_minutes?: number;
   pct_consumed?: number;
   policy?: SLAPolicy;
+  sla_paused_at?: string;
+  sla_total_paused_seconds?: number;
+};
+
+export type SLAWarningThreshold = {
+  id: string;
+  type: 'percentage' | 'time_minutes';
+  value: number;
+  label: string;
+};
+
+export type SLARiskConfig = {
+  key: string;
+  warning_thresholds: SLAWarningThreshold[];
+  risk_alert_enabled: boolean;
+  breach_alert_enabled: boolean;
+  sms_alerts_enabled: boolean;
+  email_alerts_enabled: boolean;
+};
+
+export type SLARiskKPISummary = {
+  total_active_slas: number;
+  on_track_count: number;
+  at_risk_count: number;
+  breached_count: number;
+  paused_count: number;
+  compliance_pct: number;
+  avg_remaining_minutes: number;
+};
+
+export type SLARiskOverview = {
+  kpis: SLARiskKPISummary;
+  at_risk_tickets: Array<{
+    ticket_id: string;
+    subject?: string;
+    priority: TicketPriority;
+    status: string;
+    sla_status: string;
+    sla_deadline?: string;
+    time_remaining_minutes?: number;
+    assigned_agent_id?: string;
+    crossed_threshold?: string;
+    created_at?: string;
+  }>;
+  active_alerts: Array<{
+    id: string;
+    ticket_id: string;
+    subject?: string;
+    priority?: string;
+    sla_status?: string;
+    alert_type?: string;
+    threshold_id?: string;
+    threshold_label?: string;
+    recipient_email?: string;
+    channel?: string;
+    delivery_status?: string;
+    created_at?: string;
+  }>;
 };
 
 export type User = {
@@ -83,6 +144,21 @@ export type User = {
   full_name?: string;
   role: UserRole;
   is_active: boolean;
+  two_factor_enabled?: boolean;
+  auth_provider?: 'local' | 'ldap' | string;
+  department?: string;
+  ldap_username?: string;
+  created_at: string;
+};
+
+export type Attachment = {
+  id: string;
+  ticket_id: string;
+  original_filename: string;
+  stored_filename: string;
+  mime_type: string;
+  size_bytes: number;
+  uploaded_by: string;
   created_at: string;
 };
 
@@ -101,7 +177,7 @@ export type Ticket = {
   user_id: string;
   assigned_agent_id?: string | null;
   routing_reason?: string;
-  attachments: string[];
+  attachments: (Attachment | string)[];
   keywords?: string[];
   sla_deadline?: string;
   sla_status?: SLAStatus;
@@ -386,6 +462,48 @@ export type AuditStats = {
   login_successes: number;
   login_failures: number;
   access_denied_count: number;
+};
+
+export type BackupRecord = {
+  backup_id: string;
+  database_name: string;
+  filename: string;
+  created_at: string;
+  size_bytes: number;
+  checksum_sha256?: string;
+  status: "RUNNING" | "SUCCESS" | "FAILED" | "CORRUPTED" | "DELETED";
+  duration_seconds: number;
+  backup_type: "SCHEDULED" | "MANUAL" | "SNAPSHOT";
+  verification_status: "PENDING" | "VERIFIED" | "CORRUPTED" | "FAILED" | "SKIPPED";
+  last_verified_at?: string;
+  error_message?: string;
+  retention_class: "DAILY" | "WEEKLY" | "MONTHLY" | "MANUAL";
+  deleted_at?: string;
+  is_protected: boolean;
+};
+
+export type BackupStats = {
+  total_backups: number;
+  active_backups: number;
+  total_storage_bytes: number;
+  last_successful_backup?: string;
+  last_failed_backup?: string;
+  verified_count: number;
+  corrupted_count: number;
+  failed_count: number;
+  allow_production_restore: boolean;
+};
+
+export type RestoreTestResult = {
+  backup_id: string;
+  test_database: string;
+  success: boolean;
+  duration_seconds: number;
+  checksum_verified: boolean;
+  collections_found: string[];
+  total_documents_restored: number;
+  details: Record<string, number>;
+  error_message?: string;
 };
 
 

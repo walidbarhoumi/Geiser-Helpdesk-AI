@@ -486,7 +486,11 @@ async def test_42_get_security_stats_aggregations():
         900,   # login_successes
         45,    # login_failures
         12,    # access_denied_count
+        500,   # ticket_events
+        30,    # user_mgmt_events
+        20,    # team_mgmt_events
     ])
+
 
     svc = AuditService(mock_db)
     stats = await svc.get_security_stats()

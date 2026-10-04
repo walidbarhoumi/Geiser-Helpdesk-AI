@@ -20,7 +20,18 @@ class UserService:
         return MongoModel.format_id(user)
 
     async def update_user(self, user_id: str, user_in: UserUpdate):
+        from fastapi import HTTPException
+        existing = await self.get_user_by_id(user_id)
+        if not existing:
+            return None
+
         update_data = user_in.dict(exclude_unset=True)
+        if existing.get("auth_provider") == "ldap" and "password" in update_data:
+            raise HTTPException(
+                status_code=400,
+                detail="Les mots de passe des utilisateurs Active Directory / LDAP ne peuvent pas être modifiés localement."
+            )
+
         if "password" in update_data:
             update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
 

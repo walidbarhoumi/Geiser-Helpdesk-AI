@@ -27,12 +27,14 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // Skip retry for the refresh endpoint itself to avoid infinite loops
+    // Skip retry for the refresh and logout endpoints to avoid infinite loops
     if (
       error.response?.status === 401 &&
       !originalRequest._retry &&
-      !originalRequest.url?.includes('/auth/refresh')
+      !originalRequest.url?.includes('/auth/refresh') &&
+      !originalRequest.url?.includes('/auth/logout')
     ) {
+
       originalRequest._retry = true;
       const refreshToken = localStorage.getItem('refreshToken');
 

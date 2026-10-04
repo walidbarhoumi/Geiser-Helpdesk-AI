@@ -151,8 +151,28 @@ const UserRow: React.FC<{
             <div style={{ fontWeight: 600, color: 'rgba(255,255,255,0.9)', fontSize: '14px', letterSpacing: '-0.01em' }}>
               {user.full_name || 'Unnamed User'}
             </div>
-            <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12.5px', marginTop: '2px' }}>
-              {user.email}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
+              <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px' }}>
+                {user.email}
+              </span>
+              {user.auth_provider === 'ldap' ? (
+                <span style={{
+                  fontSize: '10px', padding: '1px 6px', borderRadius: '4px',
+                  background: 'rgba(59,130,246,0.15)', color: '#60a5fa',
+                  border: '1px solid rgba(59,130,246,0.3)', fontWeight: 600,
+                  letterSpacing: '0.02em'
+                }}>
+                  AD / LDAP
+                </span>
+              ) : (
+                <span style={{
+                  fontSize: '10px', padding: '1px 6px', borderRadius: '4px',
+                  background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)',
+                  border: '1px solid rgba(255,255,255,0.08)', fontWeight: 500
+                }}>
+                  Local
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -691,15 +711,32 @@ const UserList: React.FC = () => {
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <PremiumInput label="Email Address" type="email" value={formData.email} onChange={v => setFormData(p => ({ ...p, email: v }))} placeholder="member@company.com" required />
           <PremiumInput label="Full Name" value={formData.full_name} onChange={v => setFormData(p => ({ ...p, full_name: v }))} placeholder="Jane Smith" />
-          <PremiumInput
-            label="Password"
-            type="password"
-            value={formData.password}
-            onChange={v => setFormData(p => ({ ...p, password: v }))}
-            placeholder="••••••••"
-            required={!editUser}
-            hint={editUser ? '(leave blank to keep)' : undefined}
-          />
+          {editUser?.auth_provider === 'ldap' ? (
+            <div style={{
+              padding: '12px 14px', borderRadius: '12px',
+              background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)',
+              fontSize: '12.5px', color: '#93c5fd', lineHeight: 1.5,
+              display: 'flex', alignItems: 'flex-start', gap: '8px'
+            }}>
+              <span>ℹ️</span>
+              <div>
+                <strong>Compte Active Directory / LDAP</strong>
+                <p style={{ marginTop: '2px', color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>
+                  Ce compte est synchronisé avec l'annuaire d'entreprise. Son mot de passe est géré dans l'annuaire et ne peut être modifié ici.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <PremiumInput
+              label="Password"
+              type="password"
+              value={formData.password}
+              onChange={v => setFormData(p => ({ ...p, password: v }))}
+              placeholder="••••••••"
+              required={!editUser}
+              hint={editUser ? '(leave blank to keep)' : undefined}
+            />
+          )}
 
           {/* Role Selector */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

@@ -429,20 +429,35 @@ class SLAService:
             "applied_rule": policy.get("applied_rule", {})
         }
 
-    async def compute_sla_status(self, ticket: Dict) -> SLAStatus:
+    async def compute_sla_status(self, ticket: Dict, now: Optional[datetime] = None) -> SLAStatus:
         """
         Evaluates current SLA status for a ticket:
-        - BREACHED: deadline has passed
+        - COMPLETED: ticket resolved or closed without breach
+        - PAUSED: ticket in waiting state (PENDING)
+        - BREACHED: deadline has passed or breached before resolution
         - AT_RISK: less than threshold% of time remaining
         - ON_TRACK: otherwise
         """
+        now = now or datetime.utcnow()
+        status = ticket.get("status")
+        if hasattr(status, "value"):
+            status = status.value
+
+        # Terminal status: check if completed or breached
+        if status in (TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value, "RESOLVED", "CLOSED"):
+            if ticket.get("sla_breached_at") or ticket.get("sla_status") == SLAStatus.BREACHED.value:
+                return SLAStatus.BREACHED
+            return SLAStatus.COMPLETED
+
+        # Waiting / Paused status
+        if status in (TicketStatus.PENDING.value, "PENDING"):
+            return SLAStatus.PAUSED
+
         deadline = ticket.get("sla_deadline")
         created_at = ticket.get("created_at")
 
         if not deadline or not created_at:
             return SLAStatus.ON_TRACK
-
-        now = datetime.utcnow()
 
         if now >= deadline:
             return SLAStatus.BREACHED
@@ -468,50 +483,12 @@ class SLAService:
 
     async def scan_tickets_and_alert(self) -> Dict:
         """
-        Background job: scan all active tickets, update SLA statuses,
-        fire email alerts for AT_RISK and BREACHED tickets.
-        Returns summary stats.
+        Background job: uses SLARiskService to scan active tickets,
+        update SLA statuses, and fire non-duplicated alerts across channels.
         """
-        now = datetime.utcnow()
-        active_statuses = [TicketStatus.OPEN.value, TicketStatus.IN_PROGRESS.value]
+        from services.sla_risk_service import SLARiskService
+        return await SLARiskService(self.db).evaluate_active_slas()
 
-        tickets = await self.tickets.find(
-            {"status": {"$in": active_statuses}}
-        ).to_list(1000)
-
-        stats = {"scanned": 0, "at_risk": 0, "breached": 0, "alerted": 0}
-
-        for ticket in tickets:
-            stats["scanned"] += 1
-            ticket_id = str(ticket["_id"])
-            old_status = ticket.get("sla_status", SLAStatus.ON_TRACK.value)
-            if hasattr(old_status, "value"):
-                old_status = old_status.value
-            new_status = await self.compute_sla_status(ticket)
-            new_status_val = new_status.value if hasattr(new_status, "value") else new_status
-
-            update_fields: Dict = {"sla_status": new_status_val}
-            if new_status_val == SLAStatus.BREACHED.value and old_status != SLAStatus.BREACHED.value:
-                update_fields["sla_breached_at"] = now
-
-            # Persist updated SLA status
-            await self.tickets.update_one(
-                {"_id": ticket["_id"]},
-                {"$set": update_fields}
-            )
-
-            if new_status_val == SLAStatus.AT_RISK.value:
-                stats["at_risk"] += 1
-            elif new_status_val == SLAStatus.BREACHED.value:
-                stats["breached"] += 1
-
-            # Fire alert only if status changed to AT_RISK or BREACHED
-            if new_status_val in (SLAStatus.AT_RISK.value, SLAStatus.BREACHED.value) and new_status_val != old_status:
-                await self._fire_alert(ticket, new_status, now)
-                stats["alerted"] += 1
-
-        logger.info(f"SLA Scan complete: {stats}")
-        return stats
 
     async def _fire_alert(self, ticket: Dict, sla_status: SLAStatus, now: datetime):
         """Persist alert record and send email notification."""
@@ -647,7 +624,12 @@ class SLAService:
             "sla_deadline": deadline,
             "sla_response_deadline": ticket.get("sla_response_deadline"),
             "sla_breached_at": ticket.get("sla_breached_at"),
+            "sla_paused_at": ticket.get("sla_paused_at"),
+            "sla_total_paused_seconds": ticket.get("sla_total_paused_seconds"),
             "time_remaining_minutes": time_remaining_min,
+            "remaining_seconds": remaining_sec if 'remaining_sec' in locals() else None,
+            "remaining_percentage": (100.0 - pct_consumed) if pct_consumed is not None else None,
+            "crossed_threshold": ticket.get("sla_last_warning_threshold"),
             "pct_consumed": pct_consumed,
             "policy": policy,
             "applied_rule": applied_rule,

@@ -511,14 +511,14 @@ const Login: React.FC = () => {
 
             <form onSubmit={handleSubmit}>
               <div className="field-group">
-                <label className="field-label">Email address</label>
+                <label className="field-label">Email or Directory Username</label>
                 <div className="input-wrap">
                   <span className="input-icon"><Mail size={16} /></span>
                   <input
-                    type="email"
+                    type="text"
                     required
                     className="field-input"
-                    placeholder="name@company.com"
+                    placeholder="name@company.com or username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />

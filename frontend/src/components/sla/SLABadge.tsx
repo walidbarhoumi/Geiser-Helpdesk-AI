@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, Pause } from 'lucide-react';
 import { type SLAStatus } from '../../types';
 
 const slaConfig: Record<string, { color: string; bg: string; icon: React.ReactNode; label: string; pulse?: boolean }> = {
@@ -21,6 +21,18 @@ const slaConfig: Record<string, { color: string; bg: string; icon: React.ReactNo
     bg: 'rgba(239,68,68,.12)',
     icon: <AlertTriangle size={10} />,
     label: 'SLA Dépassé',
+  },
+  PAUSED: {
+    color: '#a78bfa',
+    bg: 'rgba(167,139,250,.12)',
+    icon: <Pause size={10} />,
+    label: 'SLA En pause',
+  },
+  COMPLETED: {
+    color: '#10b981',
+    bg: 'rgba(16,185,129,.12)',
+    icon: <CheckCircle2 size={10} />,
+    label: 'SLA Respecté',
   },
 };
 

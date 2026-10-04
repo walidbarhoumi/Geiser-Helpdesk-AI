@@ -101,20 +101,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 36),
 
-                  // Email
+                  // Email ou Identifiant AD
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     decoration: const InputDecoration(
-                      labelText: 'Adresse e-mail',
-                      prefixIcon: Icon(Icons.email_outlined, color: AppTheme.textSecondary),
+                      labelText: 'E-mail ou Identifiant AD',
+                      prefixIcon: Icon(Icons.person_outline, color: AppTheme.textSecondary),
                     ),
                     validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Veuillez saisir votre e-mail';
-                      }
-                      if (!value.contains('@')) {
-                        return 'Format d e-mail invalide';
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Veuillez saisir votre e-mail ou identifiant';
                       }
                       return null;
                     },

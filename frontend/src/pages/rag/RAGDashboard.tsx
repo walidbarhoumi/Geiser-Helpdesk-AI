@@ -17,10 +17,36 @@ import {
   ArrowUpDown,
   Filter,
   Lightbulb,
-  Wrench
+  Wrench,
+  Upload,
+  Trash2,
+  Archive,
+  FileUp,
+  AlertTriangle,
+  BookOpen,
+  Clock
 } from 'lucide-react';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
+import { useAuth } from '../../store/authContext';
+
+export interface KnowledgeDocItem {
+  id: string;
+  title: string;
+  filename: string;
+  description: string;
+  document_type: string;
+  source: string;
+  uploaded_by: string;
+  uploader_name: string;
+  created_at: string;
+  updated_at: string;
+  status: 'active' | 'processing' | 'failed' | 'archived';
+  version: number;
+  chunk_count: number;
+  mime_type: string;
+  size_bytes: number;
+}
 
 interface DatasetItem {
   id: string;
@@ -109,8 +135,24 @@ const QUICK_QUERIES = [
 ];
 
 const RAGDashboard: React.FC = () => {
+  const { user } = useAuth();
+  const canManageDocs = user?.role === 'ADMIN' || user?.role === 'SUPERVISOR';
+  const isAdmin = user?.role === 'ADMIN';
+
   /* Onglets : recherche en premier car c'est le coeur du RAG Explorer */
-  const [activeTab, setActiveTab] = useState<'search' | 'dataset' | 'evaluation' | 'history'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'documents' | 'dataset' | 'evaluation' | 'history'>('search');
+
+  /* Documents internes (STEP 3) */
+  const [knowledgeDocs, setKnowledgeDocs] = useState<KnowledgeDocItem[]>([]);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [updateModalDoc, setUpdateModalDoc] = useState<KnowledgeDocItem | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadDesc, setUploadDesc] = useState('');
+  const [uploadType, setUploadType] = useState('PROCEDURE');
+  const [uploading, setUploading] = useState(false);
+  const [docFilterStatus, setDocFilterStatus] = useState<string>('');
 
   /* Recherche sémantique */
   const [problemQuery, setProblemQuery] = useState('');
@@ -155,6 +197,118 @@ const RAGDashboard: React.FC = () => {
 
   /* Réindexation */
   const [reindexing, setReindexing] = useState(false);
+
+  /* ─────────────────────────── DOCUMENTS INTERNES (STEP 3) ─────────────────────────── */
+
+  const fetchKnowledgeDocs = useCallback(async () => {
+    setLoadingDocs(true);
+    try {
+      const params: Record<string, string> = { skip: '0', limit: '100' };
+      if (docFilterStatus) params.status = docFilterStatus;
+      const { data } = await api.get('/rag/documents', { params });
+      setKnowledgeDocs(data.items || []);
+    } catch {
+      toast.error('Erreur lors du chargement des documents internes.');
+    } finally {
+      setLoadingDocs(false);
+    }
+  }, [docFilterStatus]);
+
+  useEffect(() => {
+    if (activeTab === 'documents') {
+      fetchKnowledgeDocs();
+    }
+  }, [activeTab, fetchKnowledgeDocs]);
+
+  const handleUploadDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadFile) {
+      toast.error('Veuillez sélectionner un fichier (PDF, DOCX, TXT, MD).');
+      return;
+    }
+    if (!uploadTitle.trim()) {
+      toast.error('Veuillez saisir un titre pour le document.');
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      formData.append('title', uploadTitle.trim());
+      if (uploadDesc.trim()) formData.append('description', uploadDesc.trim());
+      formData.append('document_type', uploadType);
+
+      await api.post('/rag/documents', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      toast.success('Document ingéré et indexé avec succès dans FAISS !');
+      setUploadModalOpen(false);
+      setUploadFile(null);
+      setUploadTitle('');
+      setUploadDesc('');
+      setUploadType('PROCEDURE');
+      fetchKnowledgeDocs();
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || "Échec de l'ingestion du document.";
+      toast.error(msg);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleUpdateDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!updateModalDoc) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      if (uploadFile) formData.append('file', uploadFile);
+      if (uploadTitle.trim()) formData.append('title', uploadTitle.trim());
+      if (uploadDesc.trim()) formData.append('description', uploadDesc.trim());
+      if (uploadType) formData.append('document_type', uploadType);
+
+      await api.put(`/rag/documents/${updateModalDoc.id}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      toast.success('Document mis à jour avec succès !');
+      setUpdateModalDoc(null);
+      setUploadFile(null);
+      setUploadTitle('');
+      setUploadDesc('');
+      fetchKnowledgeDocs();
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || "Échec de la mise à jour.";
+      toast.error(msg);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleArchiveDocument = async (id: string, title: string) => {
+    if (!confirm(`Archiver le document "${title}" ? Ses contenus ne seront plus recherchés par le chatbot.`)) {
+      return;
+    }
+    try {
+      await api.post(`/rag/documents/${id}/archive`);
+      toast.success('Document archivé et index FAISS actualisé.');
+      fetchKnowledgeDocs();
+    } catch {
+      toast.error("Erreur lors de l'archivage.");
+    }
+  };
+
+  const handleDeleteDocument = async (id: string, title: string) => {
+    if (!confirm(`Supprimer définitivement le document "${title}" et son fichier physique ? Cette action est irréversible.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/rag/documents/${id}?hard=true`);
+      toast.success('Document définitivement supprimé.');
+      fetchKnowledgeDocs();
+    } catch {
+      toast.error('Erreur lors de la suppression.');
+    }
+  };
 
   /* ─────────────────────────── RECHERCHE FAISS ─────────────────────────── */
 
@@ -477,6 +631,28 @@ const RAGDashboard: React.FC = () => {
         >
           <Search size={15} />
           Recherche de Solutions
+        </button>
+
+        <button
+          onClick={() => setActiveTab('documents')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+            padding: '0.55rem 1.25rem',
+            borderRadius: '0.65rem',
+            border: 'none',
+            fontWeight: 700,
+            fontSize: '0.84rem',
+            cursor: 'pointer',
+            background: activeTab === 'documents' ? '#6366f1' : 'transparent',
+            color: activeTab === 'documents' ? 'white' : '#64748b',
+            boxShadow: activeTab === 'documents' ? '0 4px 12px rgba(99,102,241,0.25)' : 'none',
+            transition: 'all 0.15s'
+          }}
+        >
+          <BookOpen size={15} />
+          Base Documentaire
         </button>
 
         <button
@@ -1874,6 +2050,815 @@ const RAGDashboard: React.FC = () => {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ────────────────────────────────────────────────────────────────── */}
+      {/* ── ONGLET 5 : BASE DOCUMENTAIRE INTERNE (STEP 3) ───────────────── */}
+      {/* ────────────────────────────────────────────────────────────────── */}
+      {activeTab === 'documents' && (
+        <div>
+          {/* En-tête gestion documentaire */}
+          <div style={{
+            background: 'white',
+            borderRadius: '1.25rem',
+            border: '1px solid #e2e8f0',
+            padding: '1.5rem',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '1rem'
+          }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <BookOpen size={20} color="#6366f1" />
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                  Gestion de la Base de Connaissances Interne
+                </h2>
+              </div>
+              <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0.35rem 0 0 0' }}>
+                Ingérez des documents internes (PDF, DOCX, TXT, MD) découpés en segments et vectorisés dans FAISS pour enrichir l'IA.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              {/* Filtre de statut */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Filter size={13} color="#64748b" />
+                <select
+                  value={docFilterStatus}
+                  onChange={e => setDocFilterStatus(e.target.value)}
+                  style={{
+                    padding: '0.45rem 0.7rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    background: '#f8fafc',
+                    color: '#0f172a'
+                  }}
+                >
+                  <option value="">Tous les statuts</option>
+                  <option value="active">Actifs uniquement</option>
+                  <option value="processing">En cours de traitement</option>
+                  <option value="archived">Archivés</option>
+                  <option value="failed">En échec</option>
+                </select>
+              </div>
+
+              {canManageDocs && (
+                <button
+                  onClick={() => setUploadModalOpen(true)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.55rem 1.25rem',
+                    borderRadius: '0.65rem',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                    color: 'white',
+                    fontWeight: 700,
+                    fontSize: '0.84rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(99,102,241,0.3)',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <Upload size={15} />
+                  Ajouter un document
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Cartes de statistiques rapides */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1.5rem'
+          }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '1rem',
+              border: '1px solid #e2e8f0',
+              padding: '1.1rem 1.25rem',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+            }}>
+              <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                Total Documents
+              </div>
+              <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0f172a', marginTop: '0.2rem' }}>
+                {knowledgeDocs.length}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                Gérés en base MongoDB
+              </div>
+            </div>
+
+            <div style={{
+              background: 'white',
+              borderRadius: '1rem',
+              border: '1px solid #e2e8f0',
+              padding: '1.1rem 1.25rem',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+            }}>
+              <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#16a34a', textTransform: 'uppercase' }}>
+                Documents Actifs
+              </div>
+              <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#16a34a', marginTop: '0.2rem' }}>
+                {knowledgeDocs.filter(d => d.status === 'active').length}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                Recherchables par l'assistant IA
+              </div>
+            </div>
+
+            <div style={{
+              background: 'white',
+              borderRadius: '1rem',
+              border: '1px solid #e2e8f0',
+              padding: '1.1rem 1.25rem',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+            }}>
+              <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#6366f1', textTransform: 'uppercase' }}>
+                Segments Vectoriels (Chunks)
+              </div>
+              <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#6366f1', marginTop: '0.2rem' }}>
+                {knowledgeDocs.reduce((acc, d) => acc + (d.status === 'active' ? (d.chunk_count || 0) : 0), 0)}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                Vecteurs injectés dans FAISS
+              </div>
+            </div>
+          </div>
+
+          {/* Liste des documents */}
+          {loadingDocs ? (
+            <div style={{ textAlign: 'center', padding: '3.5rem', color: '#64748b' }}>
+              <div style={{
+                width: '36px',
+                height: '36px',
+                border: '3px solid rgba(99,102,241,0.2)',
+                borderTopColor: '#6366f1',
+                borderRadius: '50%',
+                margin: '0 auto 1rem auto',
+                animation: 'spin 0.8s linear infinite'
+              }} />
+              <div style={{ fontWeight: 700 }}>Chargement des documents internes…</div>
+            </div>
+          ) : knowledgeDocs.length === 0 ? (
+            <div style={{
+              background: 'white',
+              borderRadius: '1.25rem',
+              border: '1px dashed #cbd5e1',
+              padding: '3.5rem 2rem',
+              textAlign: 'center',
+              color: '#64748b'
+            }}>
+              <BookOpen size={42} color="#94a3b8" style={{ margin: '0 auto 1rem auto', display: 'block' }} />
+              <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1e293b' }}>
+                Aucun document interne dans la base
+              </div>
+              <p style={{ fontSize: '0.84rem', color: '#64748b', maxWidth: '460px', margin: '0.5rem auto 1.5rem auto' }}>
+                Téléversez vos procédures de support, manuels techniques ou FAQ au format PDF, DOCX, TXT ou Markdown pour les intégrer au RAG.
+              </p>
+              {canManageDocs && (
+                <button
+                  onClick={() => setUploadModalOpen(true)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.6rem 1.4rem',
+                    borderRadius: '0.65rem',
+                    border: 'none',
+                    background: '#6366f1',
+                    color: 'white',
+                    fontWeight: 700,
+                    fontSize: '0.84rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Upload size={15} />
+                  Téléverser le premier document
+                </button>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+              {knowledgeDocs.map(doc => {
+                const isActive = doc.status === 'active';
+                const isProcessing = doc.status === 'processing';
+                const isFailed = doc.status === 'failed';
+                const isArchived = doc.status === 'archived';
+
+                return (
+                  <div
+                    key={doc.id}
+                    style={{
+                      background: 'white',
+                      borderRadius: '1rem',
+                      border: '1px solid #e2e8f0',
+                      padding: '1.25rem',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '1rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', flex: 1, minWidth: '280px' }}>
+                      <div style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: '10px',
+                        background: isActive ? 'rgba(99,102,241,0.08)' : isArchived ? '#f1f5f9' : 'rgba(239,68,68,0.08)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}>
+                        <FileText size={22} color={isActive ? '#6366f1' : isArchived ? '#94a3b8' : '#ef4444'} />
+                      </div>
+
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 800, fontSize: '0.96rem', color: '#0f172a' }}>
+                            {doc.title}
+                          </span>
+                          <span style={{
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '999px',
+                            background: '#f1f5f9',
+                            color: '#475569'
+                          }}>
+                            {doc.document_type || 'DOCUMENT'}
+                          </span>
+                          <span style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '999px',
+                            background: isActive
+                              ? 'rgba(34,197,94,0.12)'
+                              : isProcessing
+                              ? 'rgba(234,179,8,0.15)'
+                              : isFailed
+                              ? 'rgba(239,68,68,0.12)'
+                              : '#f1f5f9',
+                            color: isActive
+                              ? '#16a34a'
+                              : isProcessing
+                              ? '#ca8a04'
+                              : isFailed
+                              ? '#dc2626'
+                              : '#64748b'
+                          }}>
+                            {isActive ? '● Actif · Indexé FAISS' : isProcessing ? '◌ Traitement…' : isFailed ? '✕ Échec' : 'Archivé'}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600 }}>
+                            v{doc.version || 1}
+                          </span>
+                        </div>
+
+                        {doc.description && (
+                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.25rem' }}>
+                            {doc.description}
+                          </div>
+                        )}
+
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '1rem',
+                          marginTop: '0.5rem',
+                          fontSize: '0.74rem',
+                          color: '#94a3b8',
+                          flexWrap: 'wrap'
+                        }}>
+                          <span>Fichier : <strong style={{ color: '#475569' }}>{doc.filename}</strong></span>
+                          <span>•</span>
+                          <span>Taille : <strong style={{ color: '#475569' }}>{(doc.size_bytes / 1024).toFixed(1)} Ko</strong></span>
+                          <span>•</span>
+                          <span>Segments : <strong style={{ color: '#6366f1' }}>{doc.chunk_count} chunks</strong></span>
+                          <span>•</span>
+                          <span>Ajouté par : <strong style={{ color: '#475569' }}>{doc.uploader_name || doc.uploaded_by}</strong></span>
+                          <span>•</span>
+                          <span>
+                            {doc.created_at ? new Date(doc.created_at).toLocaleDateString('fr-FR', {
+                              day: '2-digit', month: 'short', year: 'numeric'
+                            }) : ''}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    {canManageDocs && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                        <button
+                          onClick={() => {
+                            setUpdateModalDoc(doc);
+                            setUploadTitle(doc.title);
+                            setUploadDesc(doc.description || '');
+                            setUploadType(doc.document_type || 'PROCEDURE');
+                            setUploadFile(null);
+                          }}
+                          title="Remplacer le fichier ou modifier les métadonnées"
+                          style={{
+                            background: '#f8fafc',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '0.5rem',
+                            padding: '0.45rem 0.75rem',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            color: '#475569',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem'
+                          }}
+                        >
+                          <FileUp size={14} />
+                          Remplacer
+                        </button>
+
+                        {isActive && (
+                          <button
+                            onClick={() => handleArchiveDocument(doc.id, doc.title)}
+                            title="Archiver (retirer des résultats de recherche FAISS)"
+                            style={{
+                              background: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '0.5rem',
+                              padding: '0.45rem 0.75rem',
+                              fontSize: '0.78rem',
+                              fontWeight: 600,
+                              color: '#64748b',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem'
+                            }}
+                          >
+                            <Archive size={14} />
+                            Archiver
+                          </button>
+                        )}
+
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleDeleteDocument(doc.id, doc.title)}
+                            title="Suppression définitive"
+                            style={{
+                              background: 'rgba(239,68,68,0.06)',
+                              border: '1px solid rgba(239,68,68,0.2)',
+                              borderRadius: '0.5rem',
+                              padding: '0.45rem 0.65rem',
+                              fontSize: '0.78rem',
+                              fontWeight: 600,
+                              color: '#dc2626',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem'
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ────────────────────────────────────────────────────────────────── */}
+      {/* ── MODAL : TÉLÉVERSEMENT DE DOCUMENT INTERNE ───────────────────── */}
+      {/* ────────────────────────────────────────────────────────────────── */}
+      {uploadModalOpen && (
+        <div
+          onClick={() => {
+            if (!uploading) setUploadModalOpen(false);
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem'
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'white',
+              borderRadius: '1.25rem',
+              width: '100%',
+              maxWidth: '560px',
+              padding: '1.75rem',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+              border: '1px solid #e2e8f0'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '10px',
+                  background: 'rgba(99,102,241,0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Upload size={18} color="#6366f1" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                    Ajouter un document interne
+                  </h3>
+                  <p style={{ fontSize: '0.74rem', color: '#64748b', margin: '0.15rem 0 0 0' }}>
+                    Formats supportés : PDF, DOCX, TXT, Markdown (max 10 Mo)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setUploadModalOpen(false)}
+                disabled={uploading}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUploadDocument} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Sélecteur de fichier */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>
+                  Fichier source *
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.doc,.txt,.md"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      setUploadFile(f);
+                      if (!uploadTitle) {
+                        // Pré-remplir le titre avec le nom du fichier sans extension
+                        const base = f.name.replace(/\.[^/.]+$/, '');
+                        setUploadTitle(base.replace(/[-_]/g, ' '));
+                      }
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.6rem',
+                    borderRadius: '0.65rem',
+                    border: '1.5px dashed #cbd5e1',
+                    fontSize: '0.82rem',
+                    background: '#f8fafc',
+                    boxSizing: 'border-box'
+                  }}
+                  required
+                />
+              </div>
+
+              {/* Titre */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>
+                  Titre du document *
+                </label>
+                <input
+                  type="text"
+                  value={uploadTitle}
+                  onChange={e => setUploadTitle(e.target.value)}
+                  placeholder="Ex : Procédure de réinitialisation mot de passe Active Directory"
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '0.65rem',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.84rem',
+                    boxSizing: 'border-box'
+                  }}
+                  required
+                />
+              </div>
+
+              {/* Type de document */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>
+                  Catégorie documentaire
+                </label>
+                <select
+                  value={uploadType}
+                  onChange={e => setUploadType(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '0.65rem',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.84rem',
+                    background: 'white',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <option value="PROCEDURE">Procédure opérationnelle (SOP)</option>
+                  <option value="FAQ">Foire aux questions (FAQ)</option>
+                  <option value="GUIDE">Guide utilisateur / Documentation</option>
+                  <option value="ARCHITECTURE">Architecture / Réseau</option>
+                  <option value="SECURITY">Sécurité / Politiques ISO 27001</option>
+                  <option value="OTHER">Autre document technique</option>
+                </select>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>
+                  Description / Mots-clés (optionnel)
+                </label>
+                <textarea
+                  value={uploadDesc}
+                  onChange={e => setUploadDesc(e.target.value)}
+                  placeholder="Brève description du contenu ou mots-clés spécifiques..."
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '0.65rem',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.84rem',
+                    boxSizing: 'border-box',
+                    fontFamily: 'inherit',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              {/* Note sécurité */}
+              <div style={{
+                background: '#f8fafc',
+                borderRadius: '0.65rem',
+                padding: '0.75rem',
+                fontSize: '0.72rem',
+                color: '#64748b',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                borderLeft: '3px solid #6366f1'
+              }}>
+                <Sparkles size={16} color="#6366f1" style={{ flexShrink: 0 }} />
+                <span>
+                  Le document sera découpé en segments sémantiques (chunks avec recouvrement) et réindexé automatiquement dans FAISS.
+                </span>
+              </div>
+
+              {/* Boutons modal */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setUploadModalOpen(false)}
+                  disabled={uploading}
+                  style={{
+                    padding: '0.6rem 1.1rem',
+                    borderRadius: '0.65rem',
+                    border: '1px solid #e2e8f0',
+                    background: 'white',
+                    color: '#64748b',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploading}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    padding: '0.6rem 1.4rem',
+                    borderRadius: '0.65rem',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                    color: 'white',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: uploading ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 12px rgba(99,102,241,0.3)'
+                  }}
+                >
+                  <Upload size={14} className={uploading ? 'spin' : ''} />
+                  {uploading ? 'Ingestion en cours…' : 'Ingérer dans le RAG'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ────────────────────────────────────────────────────────────────── */}
+      {/* ── MODAL : REMPLACER / METTRE À JOUR LE DOCUMENT ────────────────── */}
+      {/* ────────────────────────────────────────────────────────────────── */}
+      {updateModalDoc && (
+        <div
+          onClick={() => {
+            if (!uploading) setUpdateModalDoc(null);
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem'
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'white',
+              borderRadius: '1.25rem',
+              width: '100%',
+              maxWidth: '560px',
+              padding: '1.75rem',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+              border: '1px solid #e2e8f0'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                  Modifier / Remplacer · v{updateModalDoc.version}
+                </h3>
+                <p style={{ fontSize: '0.74rem', color: '#64748b', margin: '0.15rem 0 0 0' }}>
+                  Fichier actuel : {updateModalDoc.filename}
+                </p>
+              </div>
+              <button
+                onClick={() => setUpdateModalDoc(null)}
+                disabled={uploading}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateDocument} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>
+                  Nouveau fichier (laisser vide pour conserver l'actuel)
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.doc,.txt,.md"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) setUploadFile(f);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.6rem',
+                    borderRadius: '0.65rem',
+                    border: '1.5px dashed #cbd5e1',
+                    fontSize: '0.82rem',
+                    background: '#f8fafc',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>
+                  Titre du document
+                </label>
+                <input
+                  type="text"
+                  value={uploadTitle}
+                  onChange={e => setUploadTitle(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '0.65rem',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.84rem',
+                    boxSizing: 'border-box'
+                  }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>
+                  Catégorie documentaire
+                </label>
+                <select
+                  value={uploadType}
+                  onChange={e => setUploadType(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '0.65rem',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.84rem',
+                    background: 'white',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <option value="PROCEDURE">Procédure opérationnelle (SOP)</option>
+                  <option value="FAQ">Foire aux questions (FAQ)</option>
+                  <option value="GUIDE">Guide utilisateur / Documentation</option>
+                  <option value="ARCHITECTURE">Architecture / Réseau</option>
+                  <option value="SECURITY">Sécurité / Politiques ISO 27001</option>
+                  <option value="OTHER">Autre document technique</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>
+                  Description
+                </label>
+                <textarea
+                  value={uploadDesc}
+                  onChange={e => setUploadDesc(e.target.value)}
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '0.65rem',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.84rem',
+                    boxSizing: 'border-box',
+                    fontFamily: 'inherit',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setUpdateModalDoc(null)}
+                  disabled={uploading}
+                  style={{
+                    padding: '0.6rem 1.1rem',
+                    borderRadius: '0.65rem',
+                    border: '1px solid #e2e8f0',
+                    background: 'white',
+                    color: '#64748b',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploading}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    padding: '0.6rem 1.4rem',
+                    borderRadius: '0.65rem',
+                    border: 'none',
+                    background: '#6366f1',
+                    color: 'white',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: uploading ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <FileUp size={14} className={uploading ? 'spin' : ''} />
+                  {uploading ? 'Mise à jour…' : 'Enregistrer les modifications'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

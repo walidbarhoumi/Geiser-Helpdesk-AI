@@ -39,16 +39,55 @@ class OllamaService:
     async def generate_json(self, prompt: str, system_prompt: str = "") -> dict:
         """
         Generates structured JSON using Ollama.
+
+        Error handling:
+        - raw_response is always initialized to None before the try block so that
+          the except clause can safely reference it even if generate_response() raises.
+        - An empty or None response is caught explicitly before json.loads() to avoid
+          a secondary JSONDecodeError with an unhelpful empty-string message.
+        - Raw content is truncated in logs to avoid leaking sensitive ticket data.
+        - Returns {} on any failure so callers fall back to their heuristic path.
         """
+        raw_response: str | None = None   # always defined — guards UnboundLocalError
         try:
-            # We enforce JSON in the system prompt for better reliability
-            full_system = f"{system_prompt}\nReturn ONLY a valid JSON object. No preamble, no markdown blocks."
-            
+            # Enforce JSON output via system prompt
+            full_system = (
+                f"{system_prompt}\n"
+                "Return ONLY a valid JSON object. No preamble, no markdown blocks."
+            )
+
             raw_response = await self.generate_response(prompt, full_system)
-            
-            # Clean possible markdown blocks
+
+            if not raw_response:
+                logger.warning("Ollama returned an empty response for a JSON request.")
+                return {}
+
+            # Strip possible markdown fences before parsing
             clean_json = raw_response.replace("```json", "").replace("```", "").strip()
+
+            if not clean_json:
+                logger.warning("Ollama response was non-empty but contained only markdown fences.")
+                return {}
+
             return json.loads(clean_json)
-        except Exception as e:
-            logger.error(f"Ollama JSON parsing error: {e}. Raw: {raw_response}")
+
+        except json.JSONDecodeError as exc:
+            # Truncate raw content to 500 chars — avoids leaking ticket descriptions in logs
+            preview = (raw_response or "")[:500]
+            logger.error(
+                "Ollama JSON parsing error: %s | raw preview (500 chars): %r",
+                exc,
+                preview,
+            )
             return {}
+
+        except Exception as exc:
+            # Unexpected error (network, timeout, etc.) — raw_response may still be None
+            preview = (raw_response or "")[:500] if raw_response else "<not received>"
+            logger.error(
+                "Ollama generate_json unexpected error: %s | raw preview: %r",
+                exc,
+                preview,
+            )
+            return {}
+

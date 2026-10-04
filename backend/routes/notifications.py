@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from database.mongodb import get_database
 from core.deps import RoleChecker, get_current_user
@@ -75,6 +75,23 @@ async def send_test_sms(
     )
 
 
+@router.get("", response_model=List[NotificationOut])
+async def list_notifications(
+    limit: int = 50,
+    status: Optional[str] = None,
+    channel: Optional[str] = None,
+    current_user: UserOut = Depends(RoleChecker([UserRole.ADMIN])),
+    db=Depends(get_database),
+):
+    """
+    List notifications with optional filtering by status and channel (admin only).
+    """
+    notification_service = NotificationService(db)
+    return await notification_service.get_recent_notifications(
+        limit=limit, status=status, channel=channel
+    )
+
+
 @router.get("/history", response_model=List[NotificationOut])
 async def get_notifications_history(
     limit: int = 50,
@@ -86,3 +103,69 @@ async def get_notifications_history(
     """
     notification_service = NotificationService(db)
     return await notification_service.get_recent_notifications(limit=limit)
+
+
+@router.get("/stats")
+async def get_notifications_stats(
+    current_user: UserOut = Depends(RoleChecker([UserRole.ADMIN])),
+    db=Depends(get_database),
+) -> Dict[str, Any]:
+    """
+    Returns aggregate statistics across all notification queues (admin only).
+    """
+    from services.notification_worker import NotificationWorker
+    worker = NotificationWorker(db)
+    return await worker.get_stats()
+
+
+@router.post("/{notification_id}/retry", response_model=NotificationOut)
+async def retry_notification_endpoint(
+    notification_id: str,
+    current_user: UserOut = Depends(RoleChecker([UserRole.ADMIN])),
+    db=Depends(get_database),
+):
+    """
+    Manually retries a DEAD_LETTER, FAILED, or RETRYING notification immediately (admin only).
+    """
+    from services.notification_worker import NotificationWorker
+    worker = NotificationWorker(db)
+    updated = await worker.retry_notification(notification_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    return NotificationOut(
+        id=str(updated["_id"]),
+        user_id=str(updated.get("user_id", "")),
+        user_email=updated.get("user_email"),
+        ticket_id=updated.get("ticket_id"),
+        channel=updated.get("channel", "EMAIL"),
+        title=updated.get("title", ""),
+        message=updated.get("message", ""),
+        status=updated.get("status", "PENDING"),
+        provider=updated.get("provider"),
+        provider_message_id=updated.get("provider_message_id"),
+        event_type=updated.get("event_type"),
+        error_detail=updated.get("error_detail"),
+        recipient=updated.get("recipient"),
+        attempts=updated.get("attempts", 0),
+        max_retries=updated.get("max_retries", 5),
+        next_retry_at=updated.get("next_retry_at"),
+        error_type=updated.get("error_type"),
+        idempotency_key=updated.get("idempotency_key"),
+        retry_history=updated.get("retry_history"),
+        created_at=updated.get("created_at", datetime.utcnow())
+    )
+
+
+@router.post("/dead-letter/retry-all")
+async def retry_all_dead_letters_endpoint(
+    current_user: UserOut = Depends(RoleChecker([UserRole.ADMIN])),
+    db=Depends(get_database),
+):
+    """
+    Bulk resets all DEAD_LETTER notifications to PENDING for re-dispatch (admin only).
+    """
+    from services.notification_worker import NotificationWorker
+    worker = NotificationWorker(db)
+    count = await worker.retry_all_dead_letters()
+    return {"message": f"Successfully reset {count} dead-letter notifications to PENDING", "count": count}
