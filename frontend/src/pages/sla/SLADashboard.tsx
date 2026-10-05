@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  AlertTriangle, Clock, Award, RefreshCw, Save,
+  AlertTriangle, Clock, RefreshCw, Save,
   ArrowUpRight, CheckCircle2, XCircle, Loader2,
   Pause, ShieldCheck, Activity, Bell,
 } from 'lucide-react';

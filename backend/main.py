@@ -98,6 +98,10 @@ async def startup_db_client():
     scheduler.start()
     logger.info("SLA monitor scheduled (every 15 minutes)")
 
+    # Monitoring & Observability: Track background jobs
+    from services.job_tracker import job_tracker
+    job_tracker.attach_scheduler(scheduler)
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     if scheduler.running:
@@ -107,6 +111,13 @@ async def shutdown_db_client():
 @app.get("/")
 async def root():
     return {"message": "Welcome to the ITSM Helpdesk API"}
+
+@app.get("/health")
+async def health_check():
+    from database.mongodb import db
+    from services.system_health_service import SystemHealthService
+    service = SystemHealthService(db.db)
+    return await service.get_full_system_health()
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

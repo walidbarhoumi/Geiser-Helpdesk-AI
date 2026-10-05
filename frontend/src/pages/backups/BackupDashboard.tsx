@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Database, RefreshCw, Plus, CheckCircle2, XCircle, AlertTriangle,
-  HardDrive, Clock, ShieldCheck, Trash2, FileCheck, Play, Eye,
-  Lock, AlertOctagon, Copy, Check, ChevronRight, X, ArrowUpRight
+  HardDrive, ShieldCheck, Trash2, FileCheck, Play, Eye,
+  Copy, Check, X
 } from 'lucide-react';
 import api from '../../api/axios';
 import { useAuth } from '../../store/authContext';

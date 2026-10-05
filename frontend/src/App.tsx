@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Ticket, Users, Bot, Shield, ShieldCheck,
   LogOut, ChevronRight, Bell, Search, Settings,
-  Activity, Command, Sparkles, Timer, Database
+  Activity, Command, Sparkles, Timer, Database, Cpu
 } from 'lucide-react';
 
 
@@ -32,6 +32,8 @@ import SLADashboard from './pages/sla/SLADashboard';
 import RAGDashboard from './pages/rag/RAGDashboard';
 import AuditTrail from './pages/audit/AuditTrail';
 import BackupDashboard from './pages/backups/BackupDashboard';
+import MonitoringDashboard from './pages/monitoring/MonitoringDashboard';
+import AIEvaluationDashboard from './pages/ai-eval/AIEvaluationDashboard';
 
 import { UserRole } from './types';
 import { SupportChatbot } from './components/chat/SupportChatbot';
@@ -268,11 +270,14 @@ const Sidebar: React.FC = () => {
       label: 'Gouvernance & Audit',
       items: [
         ...(user?.role === UserRole.ADMIN ? [{ to: '/users', icon: <Shield size={17} />, label: 'Users' }] : []),
+        { to: '/monitoring', icon: <Activity size={17} />, label: 'Supervision & Santé' },
+        { to: '/ai-eval', icon: <Cpu size={17} />, label: 'Évaluation IA / RAG' },
         { to: '/audit', icon: <ShieldCheck size={17} />, label: 'Audit & Sécurité' },
         { to: '/backups', icon: <Database size={17} />, label: 'Sauvegardes & PRA' },
       ]
     }] : []),
   ];
+
 
   const initials = user?.full_name
     ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -805,6 +810,12 @@ const App: React.FC = () => {
               } />
               <Route path="/backups" element={
                 <ProtectedRoute roles={[UserRole.ADMIN, UserRole.SUPERVISOR]}><BackupDashboard /></ProtectedRoute>
+              } />
+              <Route path="/monitoring" element={
+                <ProtectedRoute roles={[UserRole.ADMIN, UserRole.SUPERVISOR]}><MonitoringDashboard /></ProtectedRoute>
+              } />
+              <Route path="/ai-eval" element={
+                <ProtectedRoute roles={[UserRole.ADMIN, UserRole.SUPERVISOR]}><AIEvaluationDashboard /></ProtectedRoute>
               } />
             </Route>
 

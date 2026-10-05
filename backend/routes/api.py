@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from routes import auth, users, tickets, agents, teams, ai, chat, sla, email, analytics, rag, notifications, audit, ws, backups
+from routes import auth, users, tickets, agents, teams, ai, chat, sla, email, analytics, rag, notifications, audit, ws, backups, monitoring, ai_eval
 
 api_router = APIRouter()
 
@@ -17,7 +17,10 @@ api_router.include_router(rag.router, prefix="/rag", tags=["rag"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(audit.router, prefix="/audit", tags=["audit"])
 api_router.include_router(backups.router, prefix="/backups", tags=["backups"])
+api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])
+api_router.include_router(ai_eval.router, prefix="/ai-eval", tags=["ai-eval"])
 api_router.include_router(ws.router, tags=["websocket"])
+
 
 
 

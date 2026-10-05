@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   User, Mail, Shield, Calendar, Key, Bell, Bot, Edit3,
   Zap, TrendingUp, Clock, Star, Lock, Smartphone,
@@ -39,7 +39,7 @@ const Profile: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'security'>('overview');
 
   // â”€â”€ 2FA State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  type TwoFAFlow = 'idle' | 'enable_sent' | 'disable_pw' | 'disable_otp';
+  type TwoFAFlow = 'idle' | 'enable_sent' | 'disable_pw' | 'disable_otp' | 'disable_sent';
   const [twoFAEnabled, setTwoFAEnabled] = useState<boolean | null>(null);
   const [twoFAFlow, setTwoFAFlow] = useState<TwoFAFlow>('idle');
   const [twoFACode, setTwoFACode] = useState('');

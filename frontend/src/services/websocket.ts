@@ -49,8 +49,14 @@ class WebSocketService {
   private getWsUrl(token: string): string {
     const isHttps = window.location.protocol === 'https:';
     const wsProto = isHttps ? 'wss:' : 'ws:';
-    // In dev, backend runs on port 8000; in production, uses current host
-    const host = window.location.port === '5173' ? 'localhost:8000' : window.location.host;
+    // VITE_WS_HOST allows explicit backend host (e.g. "backend:8000" in Docker).
+    // Falls back to: localhost:8000 in dev (port 5173), else same host as frontend.
+    const envHost = import.meta.env.VITE_WS_HOST;
+    const host = envHost
+      ? envHost
+      : window.location.port === '5173'
+      ? 'localhost:8000'
+      : window.location.host;
     return `${wsProto}//${host}/api/v1/ws?token=${encodeURIComponent(token)}`;
   }
 

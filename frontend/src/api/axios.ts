@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/api/v1';
+// API base URL: set VITE_API_URL at build time for production Docker.
+// Falls back to localhost:8000 for local development.
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,

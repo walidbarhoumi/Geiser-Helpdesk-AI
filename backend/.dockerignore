@@ -1,0 +1,50 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets and local config — NEVER bake into image
+.env
+.env.*
+!.env.example
+
+# Dev artefacts
+*.log
+app.log
+
+# Test artefacts
+.pytest_cache/
+htmlcov/
+.coverage
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Uploads (mounted as volume at runtime)
+uploads/
+
+# Backups (mounted as volume at runtime)
+backups/
+
+# FAISS index (mounted as volume at runtime)
+storage/faiss/*.faiss
+storage/faiss/*.pkl

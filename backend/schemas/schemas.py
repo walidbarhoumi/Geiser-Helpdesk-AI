@@ -354,7 +354,7 @@ class AssignAgentRequest(BaseModel):
 class SubmitSatisfactionRequest(BaseModel):
     """Request body for customer satisfaction rating (1-5) and optional comment."""
     rating: int = Field(..., ge=1, le=5, description="Satisfaction score between 1 and 5")
-    comment: Optional[str] = None
+    comment: Optional[str] = Field(None, max_length=1000)
 
 
 class PriorityCalculationRequest(BaseModel):
@@ -738,6 +738,8 @@ class AgentPerformanceOut(BaseModel):
     avg_resolution_hours: float
     sla_compliance_pct: float
     efficiency_rating: str  # "Excellent", "Bon", "En progression"
+    avg_csat_score: Optional[float] = None
+    csat_responses_count: int = 0
 
 
 class MTTRByPriority(BaseModel):
@@ -767,6 +769,125 @@ class StrategicRecurrentIssue(BaseModel):
     sample_ticket_ids: List[str] = []
 
 
+class DailyForecastPoint(BaseModel):
+    date: str  # YYYY-MM-DD
+    day_name: str  # "Lun", "Mar", etc.
+    predicted_count: int
+    lower_bound: int
+    upper_bound: int
+    confidence_pct: float = 85.0
+
+
+class VolumeForecastOut(BaseModel):
+    forecast_days: int = 7
+    daily_forecasts: List[DailyForecastPoint] = []
+    total_predicted_volume: int = 0
+    historical_daily_avg: float = 0.0
+    growth_trend_pct: float = 0.0
+    spike_risk: str = "FAIBLE"  # "ÉLEVÉ", "MODÉRÉ", "FAIBLE"
+    confidence_level: str = "MEDIUM"  # "HIGH", "MEDIUM", "LOW"
+    is_baseline: bool = False
+    peak_days: List[str] = []
+    data_points_analyzed: int = 0
+
+
+class ResolutionTimePredictionIn(BaseModel):
+    category: Optional[str] = None
+    subcategory: Optional[str] = None
+    priority: Optional[TicketPriority] = None
+    impact: Optional[ImpactLevel] = None
+    urgency: Optional[UrgencyLevel] = None
+    assigned_team_id: Optional[str] = None
+    assigned_agent_id: Optional[str] = None
+    ticket_id: Optional[str] = None
+
+
+class ResolutionTimeFactor(BaseModel):
+    factor: str
+    impact_hours: float
+    description: str
+
+
+class ResolutionTimePredictionOut(BaseModel):
+    predicted_hours: float
+    predicted_duration_formatted: str
+    confidence_score: float  # 0.0 - 100.0
+    confidence_level: str  # "HIGH", "MEDIUM", "LOW"
+    sla_target_hours: Optional[float] = None
+    estimated_sla_compliance: bool = True
+    historical_sample_size: int = 0
+    baseline_used: str  # "category_priority", "category", "priority", "global"
+    contributing_factors: List[ResolutionTimeFactor] = []
+    explanation: str
+
+
+class SLABreachRiskTicket(BaseModel):
+    ticket_id: str
+    reference: str
+    subject: str
+    priority: TicketPriority
+    status: TicketStatus
+    category: str
+    subcategory: Optional[str] = None
+    assigned_agent_id: Optional[str] = None
+    assigned_agent_name: Optional[str] = None
+    created_at: datetime
+    sla_deadline: Optional[datetime] = None
+    remaining_hours: Optional[float] = None
+    predicted_remaining_hours: float
+    breach_probability_pct: float  # 0.0 - 100.0
+    risk_level: str  # "CRITIQUE", "ÉLEVÉ", "MODÉRÉ", "FAIBLE"
+    risk_factors: List[str] = []
+    recommended_action: str
+
+
+class SLABreachRisksOut(BaseModel):
+    evaluated_at: datetime = Field(default_factory=datetime.utcnow)
+    total_active_tickets: int = 0
+    at_risk_count: int = 0
+    critical_count: int = 0
+    tickets: List[SLABreachRiskTicket] = []
+    summary: str = ""
+
+
+class RecurringTicketSummary(BaseModel):
+    ticket_id: str
+    reference: str
+    subject: str
+    status: str
+    priority: str
+    category: str
+    created_at: datetime
+    similarity_to_cluster: float
+
+
+class RecurringClusterOut(BaseModel):
+    cluster_id: str
+    title: str
+    category: str
+    subcategory: Optional[str] = None
+    keywords: List[str] = []
+    occurrence_count: int
+    status: str = "ACTIVE"  # "ACTIVE" ou "RESOLVED"
+    impact_level: str = "MOYEN"  # "CRITIQUE", "ÉLEVÉ", "MOYEN"
+    estimated_hours_lost: float = 0.0
+    first_seen: datetime
+    last_seen: datetime
+    average_similarity_pct: float
+    root_cause_analysis: str
+    common_solutions: List[str] = []
+    preventive_action_plan: List[str] = []
+    sample_tickets: List[RecurringTicketSummary] = []
+
+
+class RecurringIssuesResponse(BaseModel):
+    total_clusters: int = 0
+    active_clusters: int = 0
+    total_tickets_in_clusters: int = 0
+    clusters: List[RecurringClusterOut] = []
+    detection_method: str = "HYBRID_SEMANTIC_KEYWORDS"
+
+
 class AIPredictiveInsights(BaseModel):
     forecast_summary: str
     predicted_volume_next_week: int
@@ -775,6 +896,51 @@ class AIPredictiveInsights(BaseModel):
     peak_time_windows: List[str] = []
     strategic_issues: List[StrategicRecurrentIssue] = []
     recommended_focus_areas: List[str] = []
+    # Enhanced predictive analytics fields
+    volume_forecast: Optional[VolumeForecastOut] = None
+    sla_breach_risks: Optional[SLABreachRisksOut] = None
+    recurring_clusters: List[RecurringClusterOut] = []
+
+
+class CSATTrendPoint(BaseModel):
+    date: str
+    label: str
+    avg_rating: float
+    count: int
+
+
+class CSATAgentStat(BaseModel):
+    agent_id: str
+    agent_name: Optional[str] = None
+    avg_rating: float
+    count: int
+
+
+class CSATCategoryStat(BaseModel):
+    category: str
+    avg_rating: float
+    count: int
+
+
+class CSATRecentFeedback(BaseModel):
+    ticket_id: str
+    rating: int
+    comment: Optional[str] = None
+    category: Optional[str] = None
+    agent_id: Optional[str] = None
+    submitted_at: Optional[datetime] = None
+
+
+class CSATAnalyticsOut(BaseModel):
+    total_ratings: int = 0
+    avg_rating: float = 0.0
+    satisfaction_rate_pct: float = 0.0  # % of ratings >= 4
+    distribution: Dict[str, int] = Field(default_factory=lambda: {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0})
+    trend: List[CSATTrendPoint] = []
+    by_agent: List[CSATAgentStat] = []
+    by_category: List[CSATCategoryStat] = []
+    recent_feedback: List[CSATRecentFeedback] = []
+    period_days: int = 30
 
 
 class SummaryKPIs(BaseModel):
@@ -789,6 +955,7 @@ class SummaryKPIs(BaseModel):
     avg_response_hours: float = 0.5
     satisfaction_avg: float = 4.8
     satisfaction_responses_count: int = 0
+    positive_satisfaction_rate_pct: float = 0.0
 
 
 class AnalyticsDashboardOut(BaseModel):
@@ -798,6 +965,7 @@ class AnalyticsDashboardOut(BaseModel):
     agent_performances: List[AgentPerformanceOut] = []
     mttr_metrics: MTTRMetricsOut
     predictive_insights: AIPredictiveInsights
+    csat: Optional[CSATAnalyticsOut] = None
     generated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -1012,3 +1180,131 @@ class AuditStatsOut(BaseModel):
     team_mgmt_events: int = 0
 
 
+# ──────────────────────────────────────────────
+# Module 4: Monitoring & Observability Schemas
+# ──────────────────────────────────────────────
+
+class ComponentHealthOut(BaseModel):
+    name: str
+    status: str  # "healthy", "degraded", "unhealthy", "not_configured"
+    critical: bool = False
+    latency_ms: Optional[float] = None
+    details: Optional[str] = None
+
+
+class SystemHealthOut(BaseModel):
+    status: str  # "healthy", "degraded", "unhealthy"
+    version: str
+    server_time: str
+    uptime_seconds: int
+    components: List[Dict[str, Any]]
+    summary: Dict[str, int]
+
+
+class BackgroundJobOut(BaseModel):
+    job_id: str
+    name: str
+    status: str  # "IDLE", "RUNNING", "SUCCESS", "FAILED"
+    is_running: bool
+    last_execution_at: Optional[str] = None
+    last_success_at: Optional[str] = None
+    last_failure_at: Optional[str] = None
+    last_duration_seconds: Optional[float] = None
+    last_error: Optional[str] = None
+    success_count: int = 0
+    failure_count: int = 0
+    next_run_time: Optional[str] = None
+
+
+class OperationalMetricsOut(BaseModel):
+    tickets: Dict[str, int]
+    sla: Dict[str, int]
+    notifications: Dict[str, int]
+    email_to_ticket: Dict[str, int]
+    websockets: Dict[str, Any]
+    security: Dict[str, Any]
+    system: Dict[str, Any]
+
+
+
+
+# ──────────────────────────────────────────────
+# Module 5: AI/RAG Evaluation Schemas
+# ──────────────────────────────────────────────
+
+class ClassificationMetricOut(BaseModel):
+    accuracy: float
+    macro_f1: float
+    correct: int
+    total: int
+
+
+class ClassificationEvalOut(BaseModel):
+    metric_type: str
+    dataset_size: int
+    latency_ms: float
+    fallback_used: bool
+    llm_used: bool
+    avg_confidence: float
+    category: Dict[str, Any]
+    subcategory: Dict[str, Any]
+    priority: Dict[str, Any]
+    confusion_matrix: Dict[str, Any]
+    per_sample: List[Dict[str, Any]]
+
+
+class RAGRetrievalEvalOut(BaseModel):
+    metric_type: str
+    dataset_size: int
+    latency_ms: float
+    hit_rate_at_k: float
+    hits: int
+    total_queries: int
+    zero_result_queries: int
+    avg_top_score: float
+    per_query: List[Dict[str, Any]]
+
+
+class AnswerQualityEvalOut(BaseModel):
+    metric_type: str
+    dataset_size: int
+    avg_heuristic_quality_score: float
+    per_query: List[Dict[str, Any]]
+    note: str
+
+
+class TriageEvalOut(BaseModel):
+    metric_type: str
+    dataset_size: int
+    latency_ms: float
+    accuracy: float
+    correct: int
+    total: int
+    per_pair: List[Dict[str, Any]]
+
+
+class AIEvalSummaryOut(BaseModel):
+    category_accuracy: float
+    category_f1: float
+    subcategory_accuracy: float
+    priority_accuracy: float
+    rag_hit_rate: float
+    rag_avg_score: float
+    answer_quality_score: float
+    triage_accuracy: float
+
+
+class AIEvaluationOut(BaseModel):
+    evaluated_at: str
+    overall_status: str
+    total_latency_ms: float
+    ai_provider: str
+    model: str
+    ollama_available: bool
+    ollama_detail: str
+    fallback_used: bool
+    classification: Dict[str, Any]
+    rag_retrieval: Dict[str, Any]
+    answer_quality: Dict[str, Any]
+    triage_similarity: Dict[str, Any]
+    summary: AIEvalSummaryOut

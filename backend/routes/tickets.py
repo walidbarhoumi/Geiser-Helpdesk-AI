@@ -401,9 +401,33 @@ async def submit_ticket_satisfaction(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    # Only ticket creator or admin/agent can rate
-    if current_user["role"] == UserRole.USER and ticket["user_id"] != current_user["id"]:
-        raise HTTPException(status_code=403, detail="Access denied")
+    # Ticket must be in RESOLVED or CLOSED status
+    allowed_statuses = {TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value, "RESOLVED", "CLOSED"}
+    current_status = ticket.get("status")
+    if hasattr(current_status, "value"):
+        current_status = current_status.value
+    if current_status not in allowed_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Satisfaction rating can only be submitted for RESOLVED or CLOSED tickets (current status: {current_status})"
+        )
+
+    # Only ticket creator or admin can rate
+    user_role = current_user.get("role")
+    if hasattr(user_role, "value"):
+        user_role = user_role.value
+    current_user_id = str(current_user.get("id"))
+    ticket_user_id = str(ticket.get("user_id"))
+
+    if user_role == UserRole.USER.value and ticket_user_id != current_user_id:
+        raise HTTPException(status_code=403, detail="Access denied: you can only rate your own tickets")
+
+    # Prevent duplicate rating
+    if ticket.get("satisfaction_rating") is not None:
+        raise HTTPException(status_code=409, detail="A satisfaction rating has already been submitted for this ticket")
+
+    # Clean comment
+    comment_clean = body.comment.strip() if body.comment and body.comment.strip() else None
 
     oid = MongoModel.to_object_id(id)
     now = datetime.utcnow()
@@ -413,7 +437,7 @@ async def submit_ticket_satisfaction(
         {
             "$set": {
                 "satisfaction_rating": body.rating,
-                "satisfaction_comment": body.comment,
+                "satisfaction_comment": comment_clean,
                 "satisfaction_submitted_at": now,
                 "updated_at": now
             }
@@ -425,7 +449,7 @@ async def submit_ticket_satisfaction(
         ticket_id=id,
         action_type=TicketActionType.SATISFACTION_SUBMITTED.value,
         actor_user=current_user,
-        details={"rating": body.rating, "comment": body.comment},
+        details={"rating": body.rating, "comment": comment_clean},
         comment=f"Évaluation CSAT enregistrée : {body.rating}/5"
     )
 

@@ -202,6 +202,10 @@ export type Ticket = {
     details?: Record<string, any>;
     comment?: string;
   }>;
+  // CSAT Customer Satisfaction
+  satisfaction_rating?: number | null;
+  satisfaction_comment?: string | null;
+  satisfaction_submitted_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -328,6 +332,8 @@ export type AgentPerformance = {
   avg_resolution_hours: number;
   sla_compliance_pct: number;
   efficiency_rating: string;
+  avg_csat_score?: number | null;
+  csat_responses_count?: number;
 };
 
 export type MTTRByPriority = {
@@ -357,6 +363,114 @@ export type StrategicRecurrentIssue = {
   sample_ticket_ids: string[];
 };
 
+export type DailyForecastPoint = {
+  date: string;
+  day_name: string;
+  predicted_count: number;
+  lower_bound: number;
+  upper_bound: number;
+  confidence_pct: number;
+};
+
+export type VolumeForecast = {
+  forecast_days: number;
+  daily_forecasts: DailyForecastPoint[];
+  total_predicted_volume: number;
+  historical_daily_avg: number;
+  growth_trend_pct: number;
+  spike_risk: "ÉLEVÉ" | "MODÉRÉ" | "FAIBLE" | string;
+  confidence_level: "HIGH" | "MEDIUM" | "LOW" | string;
+  is_baseline: boolean;
+  peak_days: string[];
+  data_points_analyzed: number;
+};
+
+export type ResolutionTimeFactor = {
+  factor: string;
+  impact_hours: number;
+  description: string;
+};
+
+export type ResolutionTimePrediction = {
+  predicted_hours: number;
+  predicted_duration_formatted: string;
+  confidence_score: number;
+  confidence_level: "HIGH" | "MEDIUM" | "LOW" | string;
+  sla_target_hours?: number;
+  estimated_sla_compliance: boolean;
+  historical_sample_size: number;
+  baseline_used: string;
+  contributing_factors: ResolutionTimeFactor[];
+  explanation: string;
+};
+
+export type SLABreachRiskTicket = {
+  ticket_id: string;
+  reference: string;
+  subject: string;
+  priority: TicketPriority;
+  status: TicketStatus;
+  category: string;
+  subcategory?: string;
+  assigned_agent_id?: string;
+  assigned_agent_name?: string;
+  created_at: string;
+  sla_deadline?: string;
+  remaining_hours?: number;
+  predicted_remaining_hours: number;
+  breach_probability_pct: number;
+  risk_level: "CRITIQUE" | "ÉLEVÉ" | "MODÉRÉ" | "FAIBLE" | string;
+  risk_factors: string[];
+  recommended_action: string;
+};
+
+export type SLABreachRisks = {
+  evaluated_at: string;
+  total_active_tickets: number;
+  at_risk_count: number;
+  critical_count: number;
+  tickets: SLABreachRiskTicket[];
+  summary: string;
+};
+
+export type RecurringTicketSummary = {
+  ticket_id: string;
+  reference: string;
+  subject: string;
+  status: string;
+  priority: string;
+  category: string;
+  created_at: string;
+  similarity_to_cluster: number;
+};
+
+export type RecurringCluster = {
+  cluster_id: string;
+  title: string;
+  category: string;
+  subcategory?: string;
+  keywords: string[];
+  occurrence_count: number;
+  status: "ACTIVE" | "RESOLVED" | string;
+  impact_level: "CRITIQUE" | "ÉLEVÉ" | "MOYEN" | string;
+  estimated_hours_lost: number;
+  first_seen: string;
+  last_seen: string;
+  average_similarity_pct: number;
+  root_cause_analysis: string;
+  common_solutions: string[];
+  preventive_action_plan: string[];
+  sample_tickets: RecurringTicketSummary[];
+};
+
+export type RecurringIssuesResponse = {
+  total_clusters: number;
+  active_clusters: number;
+  total_tickets_in_clusters: number;
+  clusters: RecurringCluster[];
+  detection_method: string;
+};
+
 export type AIPredictiveInsights = {
   forecast_summary: string;
   predicted_volume_next_week: number;
@@ -365,6 +479,9 @@ export type AIPredictiveInsights = {
   peak_time_windows: string[];
   strategic_issues: StrategicRecurrentIssue[];
   recommended_focus_areas: string[];
+  volume_forecast?: VolumeForecast;
+  sla_breach_risks?: SLABreachRisks;
+  recurring_clusters?: RecurringCluster[];
 };
 
 export type SummaryKPIs = {
@@ -379,6 +496,52 @@ export type SummaryKPIs = {
   avg_response_hours?: number;
   satisfaction_avg?: number;
   satisfaction_responses_count?: number;
+  positive_satisfaction_rate_pct?: number;
+};
+
+export type CSATRatingDistribution = {
+  [key: string]: number;
+};
+
+export type CSATTrendPoint = {
+  date: string;
+  label: string;
+  avg_rating: number;
+  count: number;
+};
+
+export type CSATAgentStat = {
+  agent_id: string;
+  agent_name?: string | null;
+  avg_rating: number;
+  count: number;
+};
+
+export type CSATCategoryStat = {
+  category: string;
+  avg_rating: number;
+  count: number;
+};
+
+export type CSATRecentFeedback = {
+  ticket_id: string;
+  rating: number;
+  comment?: string | null;
+  category?: string | null;
+  agent_id?: string | null;
+  submitted_at?: string | null;
+};
+
+export type CSATAnalytics = {
+  total_ratings: number;
+  avg_rating: number;
+  satisfaction_rate_pct: number;
+  distribution: CSATRatingDistribution;
+  trend: CSATTrendPoint[];
+  by_agent: CSATAgentStat[];
+  by_category: CSATCategoryStat[];
+  recent_feedback: CSATRecentFeedback[];
+  period_days: number;
 };
 
 export type AnalyticsDashboardData = {
@@ -388,6 +551,7 @@ export type AnalyticsDashboardData = {
   agent_performances: AgentPerformance[];
   mttr_metrics: MTTRMetrics;
   predictive_insights: AIPredictiveInsights;
+  csat?: CSATAnalytics | null;
   generated_at: string;
 };
 
@@ -505,6 +669,96 @@ export type RestoreTestResult = {
   details: Record<string, number>;
   error_message?: string;
 };
+
+// ──────────────────────────────────────────────
+// Module 4: Monitoring & Observability Types
+// ──────────────────────────────────────────────
+
+export type ComponentHealth = {
+  name: string;
+  status: "healthy" | "degraded" | "unhealthy" | "not_configured" | string;
+  critical?: boolean;
+  latency_ms?: number | null;
+  details?: string | null;
+  [key: string]: any;
+};
+
+export type SystemHealthSummary = {
+  total_components: number;
+  healthy_count: number;
+  degraded_count: number;
+  unhealthy_count: number;
+  not_configured_count: number;
+};
+
+export type SystemHealth = {
+  status: "healthy" | "degraded" | "unhealthy" | string;
+  version: string;
+  server_time: string;
+  uptime_seconds: number;
+  components: ComponentHealth[];
+  summary: SystemHealthSummary;
+};
+
+export type BackgroundJob = {
+  job_id: string;
+  name: string;
+  status: "IDLE" | "RUNNING" | "SUCCESS" | "FAILED" | string;
+  is_running: boolean;
+  last_execution_at?: string | null;
+  last_success_at?: string | null;
+  last_failure_at?: string | null;
+  last_duration_seconds?: number | null;
+  last_error?: string | null;
+  success_count: number;
+  failure_count: number;
+  next_run_time?: string | null;
+};
+
+export type OperationalMetrics = {
+  tickets: {
+    total: number;
+    open: number;
+    in_progress: number;
+    resolved: number;
+    closed: number;
+    created_last_24h: number;
+  };
+  sla: {
+    on_track: number;
+    at_risk: number;
+    breached: number;
+  };
+  notifications: {
+    total: number;
+    pending: number;
+    delivered: number;
+    failed: number;
+    dead_letter: number;
+  };
+  email_to_ticket: {
+    total_processed: number;
+    success: number;
+    failed: number;
+  };
+  websockets: {
+    active_users: number;
+    active_connections: number;
+    roles_connected: Record<string, number>;
+  };
+  security: {
+    total_users: number;
+    active_users: number;
+    logins_last_24h: number;
+    failed_logins_24h: number;
+  };
+  system: {
+    version: string;
+    server_time: string;
+    uptime_seconds: number;
+  };
+};
+
 
 
 

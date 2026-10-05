@@ -22,9 +22,7 @@ import {
   Trash2,
   Archive,
   FileUp,
-  AlertTriangle,
-  BookOpen,
-  Clock
+  BookOpen
 } from 'lucide-react';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';

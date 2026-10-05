@@ -4,12 +4,12 @@ import {
   Users, CheckCircle2, Clock,
   AlertTriangle, Sparkles, RefreshCw,
   ShieldCheck, Loader2, Award, Zap,
-  BarChart3, ChevronRight, Layers, ArrowUpRight,
+  BarChart3, ChevronRight, ChevronDown, Layers, ArrowUpRight,
   FileSpreadsheet, FileText, Filter,
-  Star, MessageSquare
+  Star, MessageSquare, TrendingUp, ShieldAlert, Calculator
 } from 'lucide-react';
 import api from '../../api/axios';
-import { type AnalyticsDashboardData, TicketPriority } from '../../types';
+import { type AnalyticsDashboardData, TicketPriority, type ResolutionTimePrediction } from '../../types';
 import toast from 'react-hot-toast';
 
 interface TeamOption {
@@ -32,6 +32,34 @@ const Dashboard: React.FC = () => {
 
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [hoveredBarIndex, setHoveredBarIndex] = useState<number | null>(null);
+
+  // Predictive MTTR Estimator State
+  const [simPriority, setSimPriority] = useState<string>('HIGH');
+  const [simCategory, setSimCategory] = useState<string>('');
+  const [simUrgency, setSimUrgency] = useState<string>('HIGH');
+  const [simPrediction, setSimPrediction] = useState<ResolutionTimePrediction | null>(null);
+  const [simLoading, setSimLoading] = useState<boolean>(false);
+  const [showEstimator, setShowEstimator] = useState<boolean>(false);
+  const [expandedClusterId, setExpandedClusterId] = useState<string | null>(null);
+
+  const handleSimulateResolution = async () => {
+    setSimLoading(true);
+    try {
+      const res = await api.get<ResolutionTimePrediction>('/analytics/predictive/resolution-time', {
+        params: {
+          priority: simPriority,
+          category: simCategory || undefined,
+          urgency: simUrgency || undefined
+        }
+      });
+      setSimPrediction(res.data);
+    } catch (err) {
+      console.error('Simulation error', err);
+      toast.error("Impossible d'estimer le temps de résolution");
+    } finally {
+      setSimLoading(false);
+    }
+  };
 
   // Fetch available teams for filter dropdown
   useEffect(() => {
@@ -483,7 +511,7 @@ const Dashboard: React.FC = () => {
               {
                 label: 'Satisfaction Client (CSAT)',
                 value: `${data.kpis.satisfaction_avg ?? 4.8} / 5`,
-                subtext: `${data.kpis.satisfaction_responses_count ?? 0} retours utilisateurs`,
+                subtext: `${data.kpis.satisfaction_responses_count ?? 0} retours (${data.kpis.positive_satisfaction_rate_pct ?? (data.csat?.satisfaction_rate_pct ?? 0)}% positifs)`,
                 color: '#fbbf24',
                 icon: <Star size={18} />
               },
@@ -669,6 +697,335 @@ const Dashboard: React.FC = () => {
                   ))}
                 </div>
               </div>
+            </div>
+
+            {/* ── Predictive Volume Forecast Strip (7-day projection) ── */}
+            {data.predictive_insights.volume_forecast?.daily_forecasts && data.predictive_insights.volume_forecast.daily_forecasts.length > 0 && (
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.025)',
+                border: '1px solid rgba(139, 92, 246, 0.25)',
+                borderRadius: '14px',
+                padding: '16px 18px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <TrendingUp size={16} style={{ color: '#a78bfa' }} />
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>
+                      Projection Journalière des Volumes (7 Prochains Jours)
+                    </span>
+                    {data.predictive_insights.volume_forecast.is_baseline && (
+                      <span style={{
+                        fontSize: '10px', padding: '2px 8px', borderRadius: '6px',
+                        background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.3)',
+                        color: '#fbbf24', fontWeight: 600
+                      }}>
+                        Modèle Baseline (Historique initial)
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
+                    <span>Total prévu : <strong style={{ color: '#fff' }}>{data.predictive_insights.volume_forecast.total_predicted_volume} tickets</strong></span>
+                    <span>Tendance : <strong style={{ color: data.predictive_insights.volume_forecast.growth_trend_pct >= 0 ? '#34d399' : '#f87171' }}>
+                      {data.predictive_insights.volume_forecast.growth_trend_pct >= 0 ? '+' : ''}{data.predictive_insights.volume_forecast.growth_trend_pct}%
+                    </strong></span>
+                    <span>Confiance : <strong style={{ color: '#c4b5fd' }}>{data.predictive_insights.volume_forecast.confidence_level}</strong></span>
+                  </div>
+                </div>
+
+                {/* Day-by-day forecast cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(85px, 1fr))', gap: '8px' }}>
+                  {data.predictive_insights.volume_forecast.daily_forecasts.map((pt, idx) => {
+                    const isPeak = data.predictive_insights.volume_forecast?.peak_days.includes(pt.date);
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          background: isPeak ? 'rgba(139, 92, 246, 0.18)' : 'rgba(0, 0, 0, 0.25)',
+                          border: `1px solid ${isPeak ? 'rgba(167, 139, 250, 0.4)' : 'rgba(255, 255, 255, 0.06)'}`,
+                          borderRadius: '10px',
+                          padding: '10px 8px',
+                          textAlign: 'center',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '3px'
+                        }}
+                      >
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: isPeak ? '#c4b5fd' : 'rgba(255, 255, 255, 0.6)' }}>
+                          {pt.day_name}
+                        </span>
+                        <span style={{ fontSize: '9.5px', color: 'rgba(255, 255, 255, 0.35)' }}>
+                          {pt.date.slice(5)}
+                        </span>
+                        <span style={{ fontSize: '16px', fontWeight: 800, color: isPeak ? '#fbbf24' : '#fff', marginTop: '2px' }}>
+                          ~{pt.predicted_count}
+                        </span>
+                        <span style={{ fontSize: '9px', color: 'rgba(255, 255, 255, 0.4)' }}>
+                          [{pt.lower_bound} - {pt.upper_bound}]
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── Predictive SLA Breach Risks Alert Panel ── */}
+            {data.predictive_insights.sla_breach_risks?.tickets && data.predictive_insights.sla_breach_risks.tickets.length > 0 && (
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.06)',
+                border: '1px solid rgba(239, 68, 68, 0.28)',
+                borderRadius: '14px',
+                padding: '16px 18px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShieldAlert size={16} style={{ color: '#f87171' }} />
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#fca5a5' }}>
+                      Surveillance Prédictive des Risques de Dépassement SLA
+                    </span>
+                    <span style={{
+                      fontSize: '10.5px', padding: '2px 8px', borderRadius: '6px',
+                      background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontWeight: 700
+                    }}>
+                      {data.predictive_insights.sla_breach_risks.critical_count} CRITIQUE(S) · {data.predictive_insights.sla_breach_risks.at_risk_count} EN VIGILANCE
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)' }}>
+                    Évaluation prédictive continue sur tickets actifs
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {data.predictive_insights.sla_breach_risks.tickets.slice(0, 4).map((riskTicket) => {
+                    const isCrit = riskTicket.risk_level === 'CRITIQUE';
+                    return (
+                      <div
+                        key={riskTicket.ticket_id}
+                        style={{
+                          background: 'rgba(0, 0, 0, 0.3)',
+                          border: `1px solid ${isCrit ? 'rgba(239, 68, 68, 0.4)' : 'rgba(245, 158, 11, 0.3)'}`,
+                          borderRadius: '10px',
+                          padding: '10px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: '10px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '220px' }}>
+                          <span style={{
+                            fontSize: '10.5px', padding: '2px 6px', borderRadius: '4px',
+                            background: isCrit ? 'rgba(239, 68, 68, 0.25)' : 'rgba(245, 158, 11, 0.25)',
+                            color: isCrit ? '#f87171' : '#fbbf24', fontWeight: 700
+                          }}>
+                            {riskTicket.risk_level} ({riskTicket.breach_probability_pct}%)
+                          </span>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#e2e8f0' }}>
+                            {riskTicket.reference}
+                          </span>
+                          <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {riskTicket.subject}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '11.5px', color: 'rgba(255, 255, 255, 0.6)' }}>
+                          <span>SLA restant : <strong style={{ color: riskTicket.remaining_hours !== undefined && riskTicket.remaining_hours !== null && riskTicket.remaining_hours < 1 ? '#f87171' : '#fbbf24' }}>
+                            {riskTicket.remaining_hours !== undefined && riskTicket.remaining_hours !== null ? `${riskTicket.remaining_hours}h` : 'N/A'}
+                          </strong></span>
+                          <span>Temps estimé : <strong style={{ color: '#fff' }}>{riskTicket.predicted_remaining_hours}h</strong></span>
+                          <span style={{ color: '#6ee7b7' }}>Action : {riskTicket.recommended_action}</span>
+                          <Link
+                            to={`/tickets/${riskTicket.ticket_id}`}
+                            style={{
+                              fontSize: '11px', color: '#c4b5fd', fontWeight: 600, textDecoration: 'none',
+                              display: 'flex', alignItems: 'center', gap: '2px'
+                            }}
+                          >
+                            Traiter <ArrowUpRight size={11} />
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── Interactive Resolution Time Estimator Toggle ── */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid rgba(255, 255, 255, 0.07)',
+              borderRadius: '14px',
+              padding: '14px 18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Calculator size={15} style={{ color: '#38bdf8' }} />
+                  <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#f8fafc' }}>
+                    Simulateur Prédictif du Temps de Résolution (MTTR Prévisionnel)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowEstimator(!showEstimator)}
+                  style={{
+                    background: 'rgba(56, 189, 248, 0.12)',
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    color: '#38bdf8',
+                    padding: '4px 12px',
+                    borderRadius: '8px',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {showEstimator ? 'Masquer le simulateur' : 'Estimer un incident'}
+                </button>
+              </div>
+
+              {showEstimator && (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  paddingTop: '8px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.06)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>Priorité</label>
+                      <select
+                        value={simPriority}
+                        onChange={(e) => setSimPriority(e.target.value)}
+                        style={{
+                          background: 'rgba(0, 0, 0, 0.4)',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          color: '#fff',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          fontSize: '12px'
+                        }}
+                      >
+                        <option value="URGENT">URGENT (Cible: 2h)</option>
+                        <option value="HIGH">HIGH (Cible: 4h)</option>
+                        <option value="MEDIUM">MEDIUM (Cible: 8h)</option>
+                        <option value="LOW">LOW (Cible: 24h)</option>
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>Catégorie</label>
+                      <select
+                        value={simCategory}
+                        onChange={(e) => setSimCategory(e.target.value)}
+                        style={{
+                          background: 'rgba(0, 0, 0, 0.4)',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          color: '#fff',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          fontSize: '12px'
+                        }}
+                      >
+                        <option value="">Toutes / Général</option>
+                        {data.category_distribution?.map((c) => (
+                          <option key={c.category} value={c.category}>{c.category}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>Urgence</label>
+                      <select
+                        value={simUrgency}
+                        onChange={(e) => setSimUrgency(e.target.value)}
+                        style={{
+                          background: 'rgba(0, 0, 0, 0.4)',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          color: '#fff',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          fontSize: '12px'
+                        }}
+                      >
+                        <option value="HIGH">Élevée</option>
+                        <option value="MEDIUM">Moyenne</option>
+                        <option value="LOW">Basse</option>
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'flex-end', paddingTop: '16px' }}>
+                      <button
+                        type="button"
+                        onClick={handleSimulateResolution}
+                        disabled={simLoading}
+                        style={{
+                          background: 'linear-gradient(135deg, #38bdf8, #818cf8)',
+                          border: 'none',
+                          color: '#000',
+                          padding: '7px 16px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          cursor: simLoading ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {simLoading ? 'Calcul...' : 'Calculer le MTTR Prévisionnel'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {simPrediction && (
+                    <div style={{
+                      background: 'rgba(56, 189, 248, 0.08)',
+                      border: '1px solid rgba(56, 189, 248, 0.25)',
+                      borderRadius: '10px',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '10px'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>
+                          TEMPS DE RÉSOLUTION ESTIMÉ
+                        </div>
+                        <div style={{ fontSize: '18px', fontWeight: 800, color: '#38bdf8' }}>
+                          ~{simPrediction.predicted_duration_formatted} ({simPrediction.predicted_hours}h)
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.7)', marginTop: '2px' }}>
+                          {simPrediction.explanation}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{
+                          fontSize: '11px', padding: '4px 10px', borderRadius: '6px',
+                          background: simPrediction.estimated_sla_compliance ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                          color: simPrediction.estimated_sla_compliance ? '#34d399' : '#f87171',
+                          fontWeight: 700
+                        }}>
+                          {simPrediction.estimated_sla_compliance ? '✓ Conforme SLA' : '⚠ Risque SLA'}
+                        </span>
+                        <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>
+                          Indice de confiance : {simPrediction.confidence_score}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -964,13 +1321,14 @@ const Dashboard: React.FC = () => {
                     <th style={{ textAlign: 'center', padding: '10px 14px' }}>MTTR</th>
                     <th style={{ textAlign: 'center', padding: '10px 14px' }}>SLA %</th>
                     <th style={{ textAlign: 'center', padding: '10px 14px' }}>Charge</th>
+                    <th style={{ textAlign: 'center', padding: '10px 14px' }}>CSAT</th>
                     <th style={{ textAlign: 'center', padding: '10px 14px' }}>Évaluation</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.agent_performances.length === 0 ? (
                     <tr>
-                      <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.4)' }}>
+                      <td colSpan={9} style={{ padding: '24px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.4)' }}>
                         Aucun agent ne correspond aux filtres appliqués.
                       </td>
                     </tr>
@@ -1028,6 +1386,15 @@ const Dashboard: React.FC = () => {
                           </span>
                         </td>
                         <td style={{ textAlign: 'center', padding: '12px 14px' }}>
+                          {ag.avg_csat_score ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', color: '#fbbf24', fontWeight: 700, fontSize: '12px' }}>
+                              <Star size={12} fill="#fbbf24" /> {ag.avg_csat_score} <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '10px' }}>({ag.csat_responses_count})</span>
+                            </span>
+                          ) : (
+                            <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: '11px' }}>—</span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'center', padding: '12px 14px' }}>
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: '4px',
                             fontSize: '11px', fontWeight: 700,
@@ -1060,10 +1427,10 @@ const Dashboard: React.FC = () => {
                 <AlertTriangle size={18} style={{ color: '#f87171' }} />
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
-                    Tickets Récurrents & Actions Stratégiques (Root Cause Analysis ITIL)
+                    Détection des Incidents Récurrents & Groupes de Problèmes (Problem Management ITIL)
                   </h3>
                   <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'rgba(255, 255, 255, 0.4)' }}>
-                    Détection des causes racines communes et plans d'action préventifs formulés par l'IA
+                    Clustering sémantique et analyse des causes racines avec extraction des solutions historiques
                   </p>
                 </div>
               </div>
@@ -1072,102 +1439,268 @@ const Dashboard: React.FC = () => {
                 background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)',
                 color: '#fca5a5', fontWeight: 700
               }}>
-                {data.predictive_insights.strategic_issues.length} PROBLÈMES CLÉS IDENTIFIÉS
+                {(data.predictive_insights.recurring_clusters?.length || data.predictive_insights.strategic_issues.length)} GROUPES RÉCURRENTS IDENTIFIÉS
               </span>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px' }}>
-              {data.predictive_insights.strategic_issues.map((issue) => (
-                <div
-                  key={issue.cluster_id}
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.025)',
-                    border: '1px solid rgba(239, 68, 68, 0.25)',
-                    borderRadius: '16px',
-                    padding: '18px 20px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{
-                      fontSize: '11px', padding: '2px 8px', borderRadius: '6px',
-                      background: 'rgba(239, 68, 68, 0.18)', color: '#f87171', fontWeight: 700
-                    }}>
-                      {issue.impact_level} · {issue.recurrence_count} OCCURRENCES
-                    </span>
-                    <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)' }}>
-                      ~{issue.estimated_hours_lost}h perdues
-                    </span>
-                  </div>
-
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 700, color: '#f8fafc' }}>
-                      {issue.title}
-                    </h4>
-                    <span style={{ fontSize: '11.5px', color: '#a78bfa' }}>Catégorie : {issue.category}</span>
-                  </div>
-
-                  {/* Root Cause Analysis */}
-                  <div style={{
-                    background: 'rgba(0, 0, 0, 0.25)',
-                    border: '1px solid rgba(255, 255, 255, 0.05)',
-                    borderRadius: '10px',
-                    padding: '10px 12px',
-                    fontSize: '12px',
-                    color: 'rgba(255, 255, 255, 0.75)',
-                    lineHeight: 1.5
-                  }}>
-                    <div style={{ fontWeight: 700, color: '#fbbf24', fontSize: '11px', marginBottom: '2px', textTransform: 'uppercase' }}>
-                      🔍 Cause Racine Détectée :
-                    </div>
-                    {issue.root_cause_analysis}
-                  </div>
-
-                  {/* Strategic Recommendation */}
-                  <div style={{
-                    background: 'rgba(16, 185, 129, 0.08)',
-                    border: '1px solid rgba(16, 185, 129, 0.25)',
-                    borderRadius: '10px',
-                    padding: '10px 12px',
-                    fontSize: '12px',
-                    color: '#d1fae5',
-                    lineHeight: 1.5
-                  }}>
-                    <div style={{ fontWeight: 700, color: '#34d399', fontSize: '11px', marginBottom: '2px', textTransform: 'uppercase' }}>
-                      💡 Action Stratégique Recommandée :
-                    </div>
-                    {issue.ai_strategic_recommendation}
-                  </div>
-
-                  {/* Preventive Action Steps */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
-                    {issue.preventive_action_plan.map((step, sIdx) => (
-                      <div key={sIdx} style={{ fontSize: '11.5px', color: 'rgba(255, 255, 255, 0.65)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ color: '#10b981', fontWeight: 700 }}>✓</span>
-                        <span>{step}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Sample Tickets Links */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '10px', marginTop: '4px' }}>
-                    <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.35)' }}>
-                      Exemples : {issue.sample_ticket_ids.map(id => `#${id}`).join(', ')}
-                    </span>
-                    <Link
-                      to="/tickets"
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '16px' }}>
+              {/* If recurring_clusters available from backend, display rich clusters */}
+              {data.predictive_insights.recurring_clusters && data.predictive_insights.recurring_clusters.length > 0 ? (
+                data.predictive_insights.recurring_clusters.map((cluster) => {
+                  const isExpanded = expandedClusterId === cluster.cluster_id;
+                  const isActive = cluster.status === 'ACTIVE';
+                  return (
+                    <div
+                      key={cluster.cluster_id}
                       style={{
-                        display: 'flex', alignItems: 'center', gap: '3px',
-                        fontSize: '11.5px', color: '#c4b5fd', fontWeight: 600, textDecoration: 'none'
+                        background: 'rgba(255, 255, 255, 0.025)',
+                        border: `1px solid ${isActive ? 'rgba(239, 68, 68, 0.35)' : 'rgba(16, 185, 129, 0.3)'}`,
+                        borderRadius: '16px',
+                        padding: '18px 20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
                       }}
                     >
-                      Examiner le cluster <ArrowUpRight size={12} />
-                    </Link>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{
+                            fontSize: '10px', padding: '2px 6px', borderRadius: '4px',
+                            background: isActive ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                            color: isActive ? '#f87171' : '#34d399', fontWeight: 700
+                          }}>
+                            {isActive ? '● EN COURS' : '✓ RÉSOLU'}
+                          </span>
+                          <span style={{
+                            fontSize: '10px', padding: '2px 6px', borderRadius: '4px',
+                            background: 'rgba(139, 92, 246, 0.2)', color: '#c4b5fd', fontWeight: 700
+                          }}>
+                            {cluster.occurrence_count} TICKETS ({cluster.average_similarity_pct}% SIMILARITÉ)
+                          </span>
+                        </div>
+                        <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)' }}>
+                          ~{cluster.estimated_hours_lost}h perdues
+                        </span>
+                      </div>
+
+                      <div>
+                        <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 700, color: '#f8fafc' }}>
+                          {cluster.title}
+                        </h4>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px', fontSize: '11px', color: '#a78bfa' }}>
+                          <span>Catégorie : {cluster.category}</span>
+                          {cluster.subcategory && <span>· {cluster.subcategory}</span>}
+                        </div>
+                      </div>
+
+                      {/* Root Cause Analysis */}
+                      <div style={{
+                        background: 'rgba(0, 0, 0, 0.25)',
+                        border: '1px solid rgba(255, 255, 255, 0.05)',
+                        borderRadius: '10px',
+                        padding: '10px 12px',
+                        fontSize: '12px',
+                        color: 'rgba(255, 255, 255, 0.75)',
+                        lineHeight: 1.5
+                      }}>
+                        <div style={{ fontWeight: 700, color: '#fbbf24', fontSize: '11px', marginBottom: '2px', textTransform: 'uppercase' }}>
+                          🔍 Cause Racine Détectée :
+                        </div>
+                        {cluster.root_cause_analysis}
+                      </div>
+
+                      {/* Common Solutions from past resolved tickets */}
+                      {cluster.common_solutions && cluster.common_solutions.length > 0 && (
+                        <div style={{
+                          background: 'rgba(16, 185, 129, 0.08)',
+                          border: '1px solid rgba(16, 185, 129, 0.25)',
+                          borderRadius: '10px',
+                          padding: '10px 12px',
+                          fontSize: '12px',
+                          color: '#d1fae5',
+                          lineHeight: 1.5
+                        }}>
+                          <div style={{ fontWeight: 700, color: '#34d399', fontSize: '11px', marginBottom: '2px', textTransform: 'uppercase' }}>
+                            💡 Solution Éprouvée Identifiée :
+                          </div>
+                          {cluster.common_solutions[0]}
+                        </div>
+                      )}
+
+                      {/* Preventive Action Steps */}
+                      {cluster.preventive_action_plan && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+                          {cluster.preventive_action_plan.map((step, sIdx) => (
+                            <div key={sIdx} style={{ fontSize: '11.5px', color: 'rgba(255, 255, 255, 0.65)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ color: '#10b981', fontWeight: 700 }}>✓</span>
+                              <span>{step}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Expandable Sample Tickets */}
+                      {cluster.sample_tickets && cluster.sample_tickets.length > 0 && (
+                        <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '10px', marginTop: '4px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedClusterId(isExpanded ? null : cluster.cluster_id)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#c4b5fd',
+                              fontSize: '11.5px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: 0
+                            }}
+                          >
+                            <span>{isExpanded ? 'Masquer les tickets du groupe' : `Voir les ${cluster.sample_tickets.length} tickets du groupe`}</span>
+                            {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                          </button>
+
+                          {isExpanded && (
+                            <div style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                              marginTop: '8px',
+                              background: 'rgba(0, 0, 0, 0.25)',
+                              borderRadius: '8px',
+                              padding: '8px'
+                            }}>
+                              {cluster.sample_tickets.map((t) => (
+                                <div
+                                  key={t.ticket_id}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    fontSize: '11px',
+                                    padding: '4px 6px',
+                                    borderRadius: '4px',
+                                    background: 'rgba(255, 255, 255, 0.02)'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontWeight: 700, color: '#e2e8f0' }}>{t.reference}</span>
+                                    <span style={{ color: 'rgba(255, 255, 255, 0.65)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {t.subject}
+                                    </span>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ color: t.status === 'RESOLVED' || t.status === 'CLOSED' ? '#34d399' : '#fbbf24' }}>
+                                      {t.status}
+                                    </span>
+                                    <Link
+                                      to={`/tickets/${t.ticket_id}`}
+                                      style={{ color: '#c4b5fd', textDecoration: 'none', display: 'flex', alignItems: 'center' }}
+                                    >
+                                      <ArrowUpRight size={11} />
+                                    </Link>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                /* Fallback to strategic_issues if recurring_clusters is not provided */
+                data.predictive_insights.strategic_issues.map((issue) => (
+                  <div
+                    key={issue.cluster_id}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.025)',
+                      border: '1px solid rgba(239, 68, 68, 0.25)',
+                      borderRadius: '16px',
+                      padding: '18px 20px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{
+                        fontSize: '11px', padding: '2px 8px', borderRadius: '6px',
+                        background: 'rgba(239, 68, 68, 0.18)', color: '#f87171', fontWeight: 700
+                      }}>
+                        {issue.impact_level} · {issue.recurrence_count} OCCURRENCES
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)' }}>
+                        ~{issue.estimated_hours_lost}h perdues
+                      </span>
+                    </div>
+
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 700, color: '#f8fafc' }}>
+                        {issue.title}
+                      </h4>
+                      <span style={{ fontSize: '11.5px', color: '#a78bfa' }}>Catégorie : {issue.category}</span>
+                    </div>
+
+                    <div style={{
+                      background: 'rgba(0, 0, 0, 0.25)',
+                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                      fontSize: '12px',
+                      color: 'rgba(255, 255, 255, 0.75)',
+                      lineHeight: 1.5
+                    }}>
+                      <div style={{ fontWeight: 700, color: '#fbbf24', fontSize: '11px', marginBottom: '2px', textTransform: 'uppercase' }}>
+                        🔍 Cause Racine Détectée :
+                      </div>
+                      {issue.root_cause_analysis}
+                    </div>
+
+                    <div style={{
+                      background: 'rgba(16, 185, 129, 0.08)',
+                      border: '1px solid rgba(16, 185, 129, 0.25)',
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                      fontSize: '12px',
+                      color: '#d1fae5',
+                      lineHeight: 1.5
+                    }}>
+                      <div style={{ fontWeight: 700, color: '#34d399', fontSize: '11px', marginBottom: '2px', textTransform: 'uppercase' }}>
+                        💡 Action Stratégique Recommandée :
+                      </div>
+                      {issue.ai_strategic_recommendation}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+                      {issue.preventive_action_plan.map((step, sIdx) => (
+                        <div key={sIdx} style={{ fontSize: '11.5px', color: 'rgba(255, 255, 255, 0.65)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ color: '#10b981', fontWeight: 700 }}>✓</span>
+                          <span>{step}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '10px', marginTop: '4px' }}>
+                      <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.35)' }}>
+                        Exemples : {issue.sample_ticket_ids.map(id => `#${id}`).join(', ')}
+                      </span>
+                      <Link
+                        to="/tickets"
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '3px',
+                          fontSize: '11.5px', color: '#c4b5fd', fontWeight: 600, textDecoration: 'none'
+                        }}
+                      >
+                        Examiner le cluster <ArrowUpRight size={12} />
+                      </Link>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </>

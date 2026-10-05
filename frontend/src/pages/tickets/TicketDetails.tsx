@@ -5,7 +5,7 @@ import {
   Bot, Sparkles, Loader2, CheckCircle2, XCircle,
   Activity, Zap, MessageSquare, Send,
   Award, Paperclip, Clock, History, ChevronDown, ChevronUp,
-  Download, Upload
+  Download, Upload, Star
 } from 'lucide-react';
 import { type Ticket, type RoutingResult, type Attachment, UserRole } from '../../types';
 import api from '../../api/axios';
@@ -126,6 +126,11 @@ const TicketDetails: React.FC = () => {
   const [historyOpen, setHistoryOpen] = useState(true);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [csatRating, setCsatRating] = useState(0);
+  const [csatHover, setCsatHover] = useState(0);
+  const [csatComment, setCsatComment] = useState('');
+  const [csatSubmitting, setCsatSubmitting] = useState(false);
+  const [csatError, setCsatError] = useState<string | null>(null);
 
   const handleDownloadAttachment = async (at: Attachment | string) => {
     try {
@@ -169,6 +174,25 @@ const TicketDetails: React.FC = () => {
     } finally {
       setIsUploadingAttachment(false);
       e.target.value = '';
+    }
+  };
+
+  const handleSubmitCSAT = async () => {
+    if (!id || csatRating < 1 || csatRating > 5) return;
+    setCsatSubmitting(true);
+    setCsatError(null);
+    try {
+      await api.post(`/tickets/${id}/satisfaction`, {
+        rating: csatRating,
+        comment: csatComment.trim() || null,
+      });
+      await fetchTicket();
+      setCsatComment('');
+    } catch (err: any) {
+      const msg = err.response?.data?.detail;
+      setCsatError(typeof msg === 'string' ? msg : 'Erreur lors de la soumission de votre avis.');
+    } finally {
+      setCsatSubmitting(false);
     }
   };
 
@@ -817,6 +841,176 @@ const TicketDetails: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* CSAT Customer Satisfaction Card */}
+          {(ticket.status === 'RESOLVED' || ticket.status === 'CLOSED') && (
+            <div className="td-glass" style={{
+              borderRadius: 20,
+              padding: '1.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.08) 0%, rgba(15, 15, 25, 0.85) 100%)',
+              border: '1px solid rgba(234, 179, 8, 0.3)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                  <Star size={16} style={{ color: '#eab308' }} fill="#eab308" />
+                  <h4 style={{ margin: 0, fontSize: '.75rem', fontWeight: 700, color: '#fef08a', letterSpacing: '.05em', textTransform: 'uppercase' }}>
+                    Satisfaction Client (CSAT)
+                  </h4>
+                </div>
+                {ticket.satisfaction_rating && (
+                  <span style={{
+                    fontSize: '.7rem',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    background: 'rgba(234,179,8,.15)',
+                    color: '#facc15',
+                    border: '1px solid rgba(234,179,8,.3)'
+                  }}>
+                    {ticket.satisfaction_rating >= 4 ? 'Avis Positif' : ticket.satisfaction_rating === 3 ? 'Neutre' : 'À améliorer'}
+                  </span>
+                )}
+              </div>
+
+              {ticket.satisfaction_rating ? (
+                /* Already rated state */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star
+                        key={s}
+                        size={20}
+                        fill={s <= ticket.satisfaction_rating! ? '#eab308' : 'none'}
+                        color={s <= ticket.satisfaction_rating! ? '#eab308' : '#475569'}
+                      />
+                    ))}
+                    <span style={{ marginLeft: '6px', fontSize: '.95rem', fontWeight: 800, color: '#fef08a' }}>
+                      {ticket.satisfaction_rating} / 5
+                    </span>
+                  </div>
+                  {ticket.satisfaction_comment && (
+                    <div style={{
+                      padding: '.65rem .85rem',
+                      borderRadius: 10,
+                      background: 'rgba(255,255,255,.03)',
+                      border: '1px solid rgba(255,255,255,.06)',
+                      fontSize: '.82rem',
+                      color: '#e2e8f0',
+                      fontStyle: 'italic',
+                      lineHeight: 1.5
+                    }}>
+                      &ldquo;{ticket.satisfaction_comment}&rdquo;
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.68rem', color: 'rgba(255,255,255,.3)' }}>
+                    <Clock size={11} />
+                    <span>
+                      {ticket.satisfaction_submitted_at
+                        ? `Évalué le ${format(new Date(ticket.satisfaction_submitted_at), 'dd/MM/yyyy HH:mm')}`
+                        : 'Avis enregistré'}
+                    </span>
+                  </div>
+                </div>
+              ) : (user?.id === ticket.user_id || user?.role === UserRole.ADMIN) ? (
+                /* Interactive rating form */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '.85rem' }}>
+                  <p style={{ margin: 0, fontSize: '.78rem', color: 'rgba(255,255,255,.6)', lineHeight: 1.4 }}>
+                    Comment évaluez-vous la résolution de votre demande ?
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setCsatRating(s)}
+                        onMouseEnter={() => setCsatHover(s)}
+                        onMouseLeave={() => setCsatHover(0)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          cursor: 'pointer',
+                          transform: (csatHover || csatRating) >= s ? 'scale(1.15)' : 'scale(1)',
+                          transition: 'transform 0.15s ease'
+                        }}
+                        aria-label={`${s} étoiles`}
+                      >
+                        <Star
+                          size={24}
+                          fill={s <= (csatHover || csatRating) ? '#eab308' : 'none'}
+                          color={s <= (csatHover || csatRating) ? '#eab308' : '#64748b'}
+                        />
+                      </button>
+                    ))}
+                    {(csatHover || csatRating) > 0 && (
+                      <span style={{ fontSize: '.8rem', fontWeight: 700, color: '#fef08a', marginLeft: '4px' }}>
+                        {csatHover || csatRating}/5
+                      </span>
+                    )}
+                  </div>
+                  <textarea
+                    rows={2}
+                    maxLength={500}
+                    placeholder="Commentaire ou retour d'expérience (optionnel)..."
+                    value={csatComment}
+                    onChange={(e) => setCsatComment(e.target.value)}
+                    style={{
+                      background: 'rgba(255,255,255,.04)',
+                      border: '1px solid rgba(255,255,255,.1)',
+                      borderRadius: 10,
+                      padding: '.6rem .75rem',
+                      color: '#f1f5f9',
+                      fontSize: '.8rem',
+                      resize: 'none',
+                      outline: 'none',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                  {csatError && (
+                    <div style={{ fontSize: '.75rem', color: '#f87171', padding: '4px 8px', borderRadius: 6, background: 'rgba(239,68,68,.1)' }}>
+                      {csatError}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSubmitCSAT}
+                    disabled={csatRating === 0 || csatSubmitting}
+                    style={{
+                      padding: '.55rem 1rem',
+                      borderRadius: 10,
+                      border: 'none',
+                      background: csatRating === 0 ? 'rgba(255,255,255,.05)' : 'linear-gradient(135deg, #eab308 0%, #ca8a04 100%)',
+                      color: csatRating === 0 ? 'rgba(255,255,255,.25)' : '#0f172a',
+                      fontWeight: 700,
+                      fontSize: '.8rem',
+                      cursor: csatRating === 0 || csatSubmitting ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '.5rem',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {csatSubmitting ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" />
+                        <span>Envoi en cours...</span>
+                      </>
+                    ) : (
+                      <span>Envoyer mon évaluation</span>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div style={{ fontSize: '.75rem', color: 'rgba(255,255,255,.35)', fontStyle: 'italic' }}>
+                  En attente de l'évaluation du demandeur.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Assignment Card */}
           <div className="td-glass" style={{ borderRadius: 20, padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
