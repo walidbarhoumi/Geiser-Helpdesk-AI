@@ -1,0 +1,106 @@
+# ═══════════════════════════════════════════════════════════════════
+# GEISER Helpdesk AI — Docker Compose (development / default stack)
+#
+# Usage:
+#   docker compose up -d                 # start with dev defaults
+#   docker compose --profile ollama up   # also start local Ollama
+#   docker compose down                  # stop
+#
+# Secrets: create a .env file from .env.example before running.
+# MongoDB: uses MongoDB Atlas (external). Do NOT add mongo here.
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── Backend (FastAPI + Uvicorn) ────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: geiser-backend:latest
+    container_name: geiser-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    env_file:
+      - ./backend/.env          # secrets (gitignored — never committed)
+    environment:
+      # Override values for Docker networking:
+      # If MONGO_URL in .env points to localhost, rewrite it here to reach
+      # the host machine from inside Docker. For Atlas, set MONGO_URL in .env
+      # to the Atlas connection string and remove this override.
+      MONGO_URL: "${MONGO_URL:-mongodb://host.docker.internal:27017/itsm_helpdesk}"
+      FRONTEND_URL: "${FRONTEND_URL:-http://localhost:80}"
+      OLLAMA_URL: "${OLLAMA_URL:-http://host.docker.internal:11434}"
+    volumes:
+      # Persistent data — survives container recreation
+      - geiser_uploads:/app/uploads
+      - geiser_storage:/app/storage
+      - geiser_backups:/app/backups
+    networks:
+      - geiser_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach host Ollama on Linux
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  # ── Frontend (Nginx serving React build) ───────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Nginx proxies /api/* to the backend container — so the browser
+        # reaches the API through the same host:port as the frontend.
+        VITE_API_URL: "/api/v1"
+        VITE_WS_HOST: ""    # empty → browser uses same host (via nginx ws proxy)
+    image: geiser-frontend:latest
+    container_name: geiser-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - geiser_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # ── Optional: local Ollama (GPU/CPU) — enable with --profile ollama ──
+  ollama:
+    image: ollama/ollama:latest
+    container_name: geiser-ollama
+    restart: unless-stopped
+    profiles:
+      - ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - geiser_net
+
+# ── Networks ────────────────────────────────────────────────────
+networks:
+  geiser_net:
+    driver: bridge
+
+# ── Volumes ─────────────────────────────────────────────────────
+volumes:
+  geiser_uploads:
+    driver: local
+  geiser_storage:
+    driver: local
+  geiser_backups:
+    driver: local
+  ollama_models:
+    driver: local

@@ -1,0 +1,29 @@
+# Root-level .dockerignore — applied when building from the repo root
+.git/
+.gitignore
+*.md
+
+# Mobile app — not part of web stack
+mobile flutter/
+
+# Test artefacts
+**/.pytest_cache/
+**/htmlcov/
+**/*.log
+
+# OS
+**/.DS_Store
+**/Thumbs.db
+
+# IDE
+**/.vscode/
+**/.idea/
+
+# Frontend node_modules and build output
+frontend/node_modules/
+frontend/dist/
+
+# Python caches
+**/__pycache__/
+**/*.pyc
+**/*.pyo

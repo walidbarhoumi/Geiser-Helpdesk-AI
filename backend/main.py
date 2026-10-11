@@ -8,16 +8,25 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import os
 import logging
 
-# Logging configuration
+# Logging: stdout always; file only when LOG_FILE is set (avoids permission
+# issues and log noise in Docker containers that capture stdout).
+import os as _os
+
+_log_handlers = [logging.StreamHandler()]
+_log_file = _os.getenv("LOG_FILE", "app.log")
+if _log_file:
+    try:
+        _log_handlers.append(logging.FileHandler(_log_file))
+    except OSError:
+        pass  # Non-fatal: container may not have write access at startup
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("app.log"),
-        logging.StreamHandler()
-    ]
+    handlers=_log_handlers,
 )
 logger = logging.getLogger(__name__)
+
 
 scheduler = AsyncIOScheduler()
 

@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════════════════════════════════
+# GEISER — Production Compose override
+#
+# Usage (production):
+#   docker compose -f compose.yaml -f compose.production.yaml up -d
+#
+# Differences from base compose:
+#   - No build (uses pre-built images from registry or local tag)
+#   - restart: always
+#   - Resource limits
+#   - No source-code bind mounts
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+
+  backend:
+    image: geiser-backend:latest
+    restart: always
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "2.0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  frontend:
+    image: geiser-frontend:latest
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
