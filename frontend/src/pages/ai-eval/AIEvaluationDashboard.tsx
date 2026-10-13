@@ -7,7 +7,7 @@ import api from '../../api/axios';
 // ─────────────────────────────────────────────
 
 type EvalStatus = 'PASS' | 'DEGRADED' | 'FAIL';
-type MetricType = 'DETERMINISTIC' | 'HEURISTIC' | 'UNAVAILABLE';
+type MetricType = 'DETERMINISTIC' | 'HEURISTIC' | 'UNAVAILABLE' | 'DEEPEVAL_RAG_TRIAD' | 'DETERMINISTIC_SIMILARITY' | string;
 
 type AIEvalSummary = {
   category_accuracy: number;
@@ -18,6 +18,10 @@ type AIEvalSummary = {
   rag_avg_score: number;
   answer_quality_score: number;
   triage_accuracy: number;
+  rag_contextual_precision?: number;
+  rag_contextual_recall?: number;
+  deepeval_faithfulness?: number;
+  deepeval_relevancy?: number;
 };
 
 type ClassificationResult = {
@@ -30,6 +34,7 @@ type ClassificationResult = {
   category: { accuracy: number; macro_f1: number; macro_precision: number; macro_recall: number; correct: number; total: number };
   subcategory: { accuracy: number; macro_f1: number; correct: number; total: number };
   priority: { accuracy: number; macro_f1: number; correct: number; total: number };
+  deepeval_avg_score?: number;
 };
 
 type RAGResult = {
@@ -41,12 +46,16 @@ type RAGResult = {
   total_queries: number;
   zero_result_queries: number;
   avg_top_score: number;
+  avg_contextual_precision?: number;
+  avg_contextual_recall?: number;
 };
 
 type AnswerQualityResult = {
   metric_type: MetricType;
   dataset_size: number;
   avg_heuristic_quality_score: number;
+  avg_faithfulness?: number;
+  avg_answer_relevancy?: number;
   note: string;
 };
 
@@ -62,6 +71,7 @@ type TriageResult = {
 type FullEvaluation = {
   evaluated_at: string;
   overall_status: EvalStatus;
+  evaluation_framework?: string;
   total_latency_ms: number;
   ai_provider: string;
   model: string;
@@ -114,11 +124,13 @@ function StatusBadge({ status }: { status: EvalStatus | null | undefined }) {
 
 function MetricBadge({ type }: { type: MetricType }) {
   const cfg: Record<string, { color: string; label: string }> = {
+    DEEPEVAL_RAG_TRIAD: { color: '#8b5cf6', label: 'DEEPEVAL TRIAD' },
+    DETERMINISTIC_SIMILARITY: { color: '#6366f1', label: 'DEEPEVAL TESTCASE' },
     DETERMINISTIC: { color: '#6366f1', label: 'DÉTERMINISTE' },
     HEURISTIC:     { color: '#f59e0b', label: 'HEURISTIQUE' },
     UNAVAILABLE:   { color: '#9ca3af', label: 'INDISPONIBLE' },
   };
-  const c = cfg[type] ?? cfg.UNAVAILABLE;
+  const c = cfg[type] ?? { color: '#8b5cf6', label: String(type) };
   return (
     <span style={{
       fontSize: '.65rem', fontWeight: 700, color: c.color,
@@ -261,11 +273,20 @@ const AIEvaluationDashboard: React.FC = () => {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'rgba(255,255,255,.95)', margin: 0 }}>
-            Évaluation IA / RAG
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'rgba(255,255,255,.95)', margin: 0 }}>
+              Évaluation IA / RAG
+            </h1>
+            <span style={{
+              padding: '3px 10px', borderRadius: 999, fontSize: '.72rem', fontWeight: 700,
+              background: 'rgba(139,92,246,.18)', color: '#c084fc', border: '1px solid rgba(139,92,246,.35)',
+              display: 'flex', alignItems: 'center', gap: 4
+            }}>
+              ⚡ Framework DeepEval
+            </span>
+          </div>
           <p style={{ margin: '4px 0 0', fontSize: '.8rem', color: 'rgba(255,255,255,.35)' }}>
-            Mesures objectives de qualité de la classification, du RAG et du triage.
+            Évaluation rigoureuse des composants IA (Classification, RAG Triad & Triage) avec le framework DeepEval.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -332,8 +353,19 @@ const AIEvaluationDashboard: React.FC = () => {
             ? <AlertTriangle size={20} color="#f59e0b" />
             : <XCircle size={20} color="#ef4444" />}
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '.9rem', fontWeight: 700, color: 'rgba(255,255,255,.9)' }}>
-              Statut global : <StatusBadge status={evaluation.overall_status} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '.9rem', fontWeight: 700, color: 'rgba(255,255,255,.9)' }}>
+                Statut global :
+              </span>
+              <StatusBadge status={evaluation.overall_status} />
+              {evaluation.evaluation_framework && (
+                <span style={{
+                  fontSize: '.68rem', fontWeight: 700, color: '#a78bfa',
+                  background: 'rgba(167,139,250,.12)', padding: '2px 8px', borderRadius: 999,
+                }}>
+                  {evaluation.evaluation_framework}
+                </span>
+              )}
             </div>
             <div style={{ fontSize: '.72rem', color: 'rgba(255,255,255,.3)', marginTop: 3 }}>
               Évalué le {new Date(evaluation.evaluated_at).toLocaleString('fr-FR')} •
@@ -359,7 +391,7 @@ const AIEvaluationDashboard: React.FC = () => {
       {/* Summary KPI strip */}
       {evaluation?.summary && (
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
           gap: 10, marginBottom: 20,
         }}>
           {[
@@ -367,7 +399,12 @@ const AIEvaluationDashboard: React.FC = () => {
             { label: 'Préc. sous-cat.', value: pct(evaluation.summary.subcategory_accuracy), color: 'rgba(255,255,255,.8)' },
             { label: 'Préc. priorité', value: pct(evaluation.summary.priority_accuracy), color: 'rgba(255,255,255,.8)' },
             { label: 'RAG hit@K', value: pct(evaluation.summary.rag_hit_rate), color: evaluation.summary.rag_hit_rate >= 0.70 ? '#10b981' : '#f59e0b', sub: `Score moy. ${evaluation.summary.rag_avg_score.toFixed(2)}` },
-            { label: 'Qualité réponse', value: `${score(evaluation.summary.answer_quality_score)}/100`, sub: 'heuristique', color: 'rgba(255,255,255,.8)' },
+            ...(evaluation.summary.deepeval_faithfulness !== undefined && evaluation.summary.deepeval_relevancy !== undefined ? [
+              { label: 'DeepEval Fidélité', value: pct(evaluation.summary.deepeval_faithfulness), color: evaluation.summary.deepeval_faithfulness >= 0.80 ? '#10b981' : '#f59e0b', sub: 'Faithfulness' },
+              { label: 'DeepEval Pertinence', value: pct(evaluation.summary.deepeval_relevancy), color: evaluation.summary.deepeval_relevancy >= 0.80 ? '#10b981' : '#f59e0b', sub: 'Answer Relevancy' },
+            ] : [
+              { label: 'Qualité réponse', value: `${score(evaluation.summary.answer_quality_score)}/100`, sub: 'heuristique', color: 'rgba(255,255,255,.8)' },
+            ]),
             { label: 'Préc. triage', value: pct(evaluation.summary.triage_accuracy), color: 'rgba(255,255,255,.8)' },
           ].map(s => (
             <div key={s.label} style={{
@@ -432,6 +469,10 @@ const AIEvaluationDashboard: React.FC = () => {
                 <StatGrid stats={[
                   { label: 'Hit rate @K', value: pct(rag.hit_rate_at_k), color: rag.hit_rate_at_k >= 0.70 ? '#10b981' : '#f59e0b', sub: `${rag.hits}/${rag.total_queries} requêtes` },
                   { label: 'Score moyen', value: rag.avg_top_score.toFixed(4) },
+                  ...(evaluation?.summary?.rag_contextual_precision !== undefined ? [
+                    { label: 'Préc. contextuelle', value: pct(evaluation.summary.rag_contextual_precision), sub: 'Contextual Prec.' },
+                    { label: 'Rappel contextuel', value: pct(evaluation.summary.rag_contextual_recall), sub: 'Contextual Recall' },
+                  ] : []),
                   { label: 'Requêtes sans résultat', value: rag.zero_result_queries, color: rag.zero_result_queries === 0 ? 'rgba(255,255,255,.8)' : '#f59e0b' },
                   { label: 'Latence', value: `${rag.latency_ms.toFixed(0)} ms`, sub: 'total dataset' },
                 ]} />
@@ -443,25 +484,69 @@ const AIEvaluationDashboard: React.FC = () => {
                   background: 'rgba(99,102,241,.08)', border: '1px solid rgba(99,102,241,.15)',
                   borderRadius: 10, padding: '10px 14px', fontSize: '.72rem', color: 'rgba(255,255,255,.4)',
                 }}>
-                  <strong style={{ color: 'rgba(255,255,255,.6)' }}>Note :</strong> Le hit rate mesure si le document attendu apparaît parmi les top-K résultats. Le filtre de score évite les faux positifs.
+                  <strong style={{ color: 'rgba(255,255,255,.6)' }}>Note :</strong> Le hit rate et la précision contextuelle mesurent si le document attendu apparaît dans le contexte de retrieval DeepEval.
                 </div>
               </div>
             )}
           </Section>
 
-          {/* Answer Quality */}
-          <Section title="Qualité des réponses" icon={<Zap size={16} />} badge={<MetricBadge type={ans?.metric_type ?? 'HEURISTIC'} />}>
+          {/* Answer Quality & DeepEval RAG Triad */}
+          <Section
+            title="Qualité des réponses & DeepEval RAG Triad"
+            icon={<Zap size={16} />}
+            badge={<MetricBadge type={ans?.metric_type ?? 'DEEPEVAL_RAG_TRIAD'} />}
+          >
             {ans && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <StatGrid stats={[
-                  { label: 'Score qualité moy.', value: `${score(ans.avg_heuristic_quality_score)}/100`, color: ans.avg_heuristic_quality_score >= 70 ? '#10b981' : '#f59e0b' },
-                  { label: 'Requêtes évaluées', value: ans.dataset_size },
+                  ...(evaluation?.summary?.deepeval_faithfulness !== undefined && evaluation?.summary?.deepeval_relevancy !== undefined ? [
+                    {
+                      label: 'DeepEval Fidélité',
+                      value: pct(evaluation.summary.deepeval_faithfulness),
+                      color: evaluation.summary.deepeval_faithfulness >= 0.80 ? '#10b981' : '#f59e0b',
+                      sub: 'Grounding factuel'
+                    },
+                    {
+                      label: 'DeepEval Pertinence',
+                      value: pct(evaluation.summary.deepeval_relevancy),
+                      color: evaluation.summary.deepeval_relevancy >= 0.80 ? '#10b981' : '#f59e0b',
+                      sub: 'Answer Relevancy'
+                    },
+                    {
+                      label: 'Score RAG Composite',
+                      value: pct(evaluation.summary.answer_quality_score),
+                      color: '#a78bfa',
+                      sub: 'Triad moyenne'
+                    },
+                  ] : [
+                    { label: 'Score qualité moy.', value: `${score(ans.avg_heuristic_quality_score)}/100`, color: ans.avg_heuristic_quality_score >= 70 ? '#10b981' : '#f59e0b' },
+                  ]),
+                  { label: 'Cas de test DeepEval', value: ans.dataset_size, sub: 'requêtes testées' },
                 ]} />
+
+                {evaluation?.summary?.deepeval_faithfulness !== undefined && evaluation?.summary?.deepeval_relevancy !== undefined && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    <div>
+                      <div style={{ fontSize: '.7rem', color: 'rgba(255,255,255,.4)', marginBottom: 6 }}>
+                        Fidélité au contexte (DeepEval Faithfulness)
+                      </div>
+                      <GaugePct value={evaluation.summary.deepeval_faithfulness} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '.7rem', color: 'rgba(255,255,255,.4)', marginBottom: 6 }}>
+                        Pertinence de la réponse (DeepEval Relevancy)
+                      </div>
+                      <GaugePct value={evaluation.summary.deepeval_relevancy} />
+                    </div>
+                  </div>
+                )}
+
                 <div style={{
-                  background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.15)',
-                  borderRadius: 10, padding: '10px 14px', fontSize: '.72rem', color: 'rgba(255,255,255,.4)',
+                  background: 'rgba(139,92,246,.08)', border: '1px solid rgba(139,92,246,.2)',
+                  borderRadius: 10, padding: '12px 16px', fontSize: '.74rem', color: 'rgba(255,255,255,.5)',
+                  lineHeight: 1.5
                 }}>
-                  <strong style={{ color: '#f59e0b' }}>Heuristique :</strong> {ans.note}
+                  <strong style={{ color: '#c084fc' }}>DeepEval LLMTestCase & RAG Triad :</strong> {ans.note || 'Évalué selon les métriques de fidélité (grounding factuel) et de pertinence sémantique du framework DeepEval.'}
                 </div>
               </div>
             )}

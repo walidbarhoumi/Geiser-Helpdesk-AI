@@ -1297,6 +1297,10 @@ class AIEvalSummaryOut(BaseModel):
     rag_avg_score: float
     answer_quality_score: float
     triage_accuracy: float
+    rag_contextual_precision: Optional[float] = None
+    rag_contextual_recall: Optional[float] = None
+    deepeval_faithfulness: Optional[float] = None
+    deepeval_relevancy: Optional[float] = None
 
 
 class AIEvaluationOut(BaseModel):
@@ -1308,6 +1312,7 @@ class AIEvaluationOut(BaseModel):
     ollama_available: bool
     ollama_detail: str
     fallback_used: bool
+    evaluation_framework: Optional[str] = "DeepEval"
     classification: Dict[str, Any]
     rag_retrieval: Dict[str, Any]
     answer_quality: Dict[str, Any]

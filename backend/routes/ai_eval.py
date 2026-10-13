@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.deps import RoleChecker, get_current_user
 from schemas.schemas import UserRole, AIEvaluationOut
-from services.ai_evaluation_service import AIEvaluationService
+from services.deepeval_evaluation_service import DeepEvalEvaluationService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -37,11 +37,11 @@ _eval_running = False
 
 
 async def _run_and_cache() -> Dict[str, Any]:
-    """Run the full evaluation and store in module-level cache."""
+    """Run the DeepEval full evaluation and store in module-level cache."""
     global _eval_cache, _eval_running
     _eval_running = True
     try:
-        svc = AIEvaluationService()
+        svc = DeepEvalEvaluationService()
         result = await svc.run_full_evaluation()
         _eval_cache = result
         return result
