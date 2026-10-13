@@ -106,6 +106,17 @@ class ApiConstants {
   static const String tickets = '/tickets/';
   static const String createTicket = '/tickets/create';
 
+  // Admin / management endpoints
+  static const String agents = '/agents/';
+  static const String teams = '/teams/';
+  static const String users = '/users/';
+  static const String notifications = '/notifications/';
+  static const String notificationsHistory = '/notifications/history';
+  static const String analyticsDB = '/analytics/dashboard';
+  static const String slaAlerts = '/sla/alerts';
+  static const String slaRisk = '/sla/risk';
+  static const String auditLogs = '/audit/logs';
+
   // Storage keys
   static const String tokenKey = 'geiser_access_token';
   static const String refreshTokenKey = 'geiser_refresh_token';

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/api_constants.dart';
@@ -27,6 +28,9 @@ class ApiClient {
         onRequest: (options, handler) async {
           // Always ensure the latest base URL is used dynamically
           options.baseUrl = ApiConstants.baseUrl;
+          if (kDebugMode) {
+            debugPrint('[API REQUEST] ${options.method} -> ${options.baseUrl}${options.path}');
+          }
 
           final prefs = await SharedPreferences.getInstance();
           final token = prefs.getString(ApiConstants.tokenKey);
@@ -36,6 +40,9 @@ class ApiClient {
           return handler.next(options);
         },
         onError: (DioException error, handler) {
+          if (kDebugMode) {
+            debugPrint('[API ERROR] ${error.requestOptions.uri}: ${error.message}');
+          }
           return handler.next(error);
         },
       ),

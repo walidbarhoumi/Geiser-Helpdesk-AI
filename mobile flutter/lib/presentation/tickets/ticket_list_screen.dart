@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../providers/ticket_provider.dart';
 import '../../data/models/ticket_model.dart';
 import 'create_ticket_screen.dart';
+import 'ticket_detail_screen.dart';
 
 class TicketListScreen extends StatefulWidget {
   const TicketListScreen({super.key});
@@ -271,25 +272,33 @@ class _TicketListScreenState extends State<TicketListScreen> {
 
     final dateStr = DateFormat('dd/MM/yyyy HH:mm').format(ticket.createdAt);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFF1F293D)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => TicketDetailScreen(ticketId: ticket.id),
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFF1F293D)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Header Row: Status Pill & Priority Badge
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -427,6 +436,7 @@ class _TicketListScreenState extends State<TicketListScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

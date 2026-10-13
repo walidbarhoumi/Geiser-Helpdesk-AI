@@ -49,42 +49,57 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     if (!mounted) return;
+    final navigator = Navigator.of(context);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
     final authProvider = context.read<AuthProvider>();
+
     final result = await authProvider.login(
       _emailController.text.trim(),
       _passwordController.text.trim(),
     );
 
-    if (mounted) {
-      if (result.success) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-        );
-      } else if (result.requires2FA) {
-        // Redirection vers l'écran dédié de validation 2FA
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => Verify2FAScreen(
-              email: result.email ?? _emailController.text.trim(),
-            ),
+    debugPrint('[LOGIN SCREEN] ===== LOGIN RESULT =====');
+    debugPrint('[LOGIN SCREEN] success=${result.success}');
+    debugPrint('[LOGIN SCREEN] requires2FA=${result.requires2FA}');
+    debugPrint('[LOGIN SCREEN] email=${result.email}');
+    debugPrint('[LOGIN SCREEN] error=${result.error}');
+    debugPrint('[LOGIN SCREEN] mounted=$mounted');
+
+    if (!mounted) {
+      debugPrint('[LOGIN SCREEN] ❌ NOT MOUNTED — navigation aborted!');
+      return;
+    }
+    debugPrint('[LOGIN SCREEN] ✅ mounted=true, proceeding to navigate');
+
+    if (result.success) {
+      navigator.pushReplacement(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    } else if (result.requires2FA) {
+      // Redirection immédiate vers l'écran dédié de validation 2FA
+      final targetEmail = result.email ?? _emailController.text.trim();
+      debugPrint('[LOGIN SCREEN] Navigating to Verify2FAScreen with email=$targetEmail');
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => Verify2FAScreen(email: targetEmail),
+        ),
+      );
+    } else {
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            result.error ?? authProvider.errorMessage ?? 'Connexion impossible. Vérifiez l\'URL du serveur.',
           ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              result.error ?? authProvider.errorMessage ?? 'Connexion impossible. Vérifiez l\'URL du serveur.',
-            ),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-      }
+          backgroundColor: AppTheme.error,
+        ),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
+    // Only select isLoading so the widget does not unnecessarily rebuild or tear down during 2FA
+    final isLoading = context.select<AuthProvider, bool>((p) => p.isLoading);
 
     return Scaffold(
       body: SafeArea(
@@ -218,8 +233,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           keyboardType: TextInputType.url,
                           style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary),
                           decoration: InputDecoration(
-                            labelText: 'URL Serveur Cloudflare',
-                            hintText: 'https://xxx.trycloudflare.com',
+                            labelText: 'URL Serveur',
+                            hintText: 'http://10.0.2.2:8000 ou https://xxx.trycloudflare.com',
                             prefixIcon: Icon(
                               Icons.link_rounded,
                               color: AppTheme.textSecondary.withValues(alpha: 0.8),
@@ -230,7 +245,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     icon: const Icon(Icons.refresh_rounded, size: 18, color: AppTheme.textSecondary),
                                     tooltip: 'Réinitialiser',
                                     onPressed: () {
-                                      _serverUrlController.text = ApiConstants.defaultTunnelUrl;
+                                      _serverUrlController.text = ApiConstants.currentServerUrl;
                                     },
                                   )
                                 : null,
@@ -258,7 +273,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    'Collez ici la nouvelle URL générée par cloudflared (ex: https://abc-xyz.trycloudflare.com). Elle sera sauvegardée automatiquement.',
+                                    'Collez ici l\'URL de votre tunnel Cloudflare ou conservez http://10.0.2.2:8000 sur émulateur Android.',
                                     style: TextStyle(
                                       fontSize: 11,
                                       color: AppTheme.textSecondary.withValues(alpha: 0.9),
@@ -349,7 +364,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                     child: ElevatedButton(
-                      onPressed: authProvider.isLoading ? null : _handleLogin,
+                      onPressed: isLoading ? null : _handleLogin,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.transparent,
                         shadowColor: Colors.transparent,
@@ -357,7 +372,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      child: authProvider.isLoading
+                      child: isLoading
                           ? const SizedBox(
                               width: 22,
                               height: 22,
