@@ -9,6 +9,20 @@ from models.base import MongoModel
 router = APIRouter()
 
 
+def _role_value(user):
+    role = user.get("role")
+    return role.value if hasattr(role, "value") else str(role)
+
+
+async def _agent_team_ids(db, user):
+    agent = await db.agents.find_one({"user_id": str(user.get("id"))})
+    if not agent:
+        return set()
+    agent_id = str(agent.get("_id") or agent.get("id"))
+    teams = await db.teams.find({"agent_ids": agent_id}).to_list(100)
+    return {str(team.get("_id") or team.get("id")) for team in teams}
+
+
 @router.post("/", response_model=TeamOut)
 async def create_team(
     team_in: TeamCreate,
@@ -49,13 +63,17 @@ async def list_teams(
     db=Depends(get_database)
 ):
     service = TeamService(db)
-    return await service.get_teams()
+    teams = await service.get_teams()
+    if _role_value(current_user) == UserRole.AGENT.value:
+        visible_team_ids = await _agent_team_ids(db, current_user)
+        teams = [team for team in teams if str(team.get("id")) in visible_team_ids]
+    return teams
 
 
 @router.get("/{id}", response_model=TeamOut)
 async def get_team(
     id: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(RoleChecker([UserRole.AGENT, UserRole.SUPERVISOR, UserRole.ADMIN])),
     db=Depends(get_database)
 ):
     oid = MongoModel.to_object_id(id)
@@ -63,6 +81,8 @@ async def get_team(
         raise HTTPException(status_code=400, detail="Invalid team ID")
     team = await db.teams.find_one({"_id": oid})
     if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    if _role_value(current_user) == UserRole.AGENT.value and id not in await _agent_team_ids(db, current_user):
         raise HTTPException(status_code=404, detail="Team not found")
     return MongoModel.format_id(team)
 

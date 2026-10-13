@@ -168,36 +168,16 @@ class PredictiveAnalyticsService:
 
         # ── Case A: Insufficient Historical Data (Fallback Baseline) ──
         if total_tickets < 3 or active_days_count < 2:
-            # Baseline estimation
-            baseline_daily = max(1, round(total_tickets / max(1, active_days_count))) if total_tickets > 0 else 3
-            forecast_points: List[DailyForecastPoint] = []
-            
-            for i in range(1, forecast_days + 1):
-                f_date = now + timedelta(days=i)
-                dow_idx = f_date.weekday()
-                # Weekend reduction factor
-                factor = 0.4 if dow_idx in [5, 6] else 1.0
-                pred = max(1, round(baseline_daily * factor))
-                forecast_points.append(DailyForecastPoint(
-                    date=f_date.strftime("%Y-%m-%d"),
-                    day_name=FRENCH_DAYS[dow_idx],
-                    predicted_count=pred,
-                    lower_bound=max(0, pred - 1),
-                    upper_bound=pred + 2,
-                    confidence_pct=45.0
-                ))
-
-            total_pred = sum(p.predicted_count for p in forecast_points)
             return VolumeForecastOut(
                 forecast_days=forecast_days,
-                daily_forecasts=forecast_points,
-                total_predicted_volume=total_pred,
-                historical_daily_avg=round(float(baseline_daily), 1),
-                growth_trend_pct=0.0,
-                spike_risk="FAIBLE",
-                confidence_level="LOW",
+                daily_forecasts=[],
+                total_predicted_volume=None,
+                historical_daily_avg=None,
+                growth_trend_pct=None,
+                spike_risk=None,
+                confidence_level="UNAVAILABLE",
                 is_baseline=True,
-                peak_days=[forecast_points[0].date] if forecast_points else [],
+                peak_days=[],
                 data_points_analyzed=total_tickets
             )
 
@@ -323,17 +303,21 @@ class PredictiveAnalyticsService:
         """
         # If ticket_id provided, inspect existing ticket for defaults
         if ticket_id:
-            try:
-                ticket_doc = await self.tickets.find_one({"_id": MongoModel.to_object_id(ticket_id)})
-                if ticket_doc:
-                    category = category or ticket_doc.get("category")
-                    subcategory = subcategory or ticket_doc.get("subcategory")
-                    priority = priority or ticket_doc.get("priority")
-                    impact = impact or ticket_doc.get("impact")
-                    urgency = urgency or ticket_doc.get("urgency")
-                    agent_id = agent_id or str(ticket_doc.get("assigned_agent_id", ""))
-            except Exception as e:
-                logger.warning(f"Error fetching ticket {ticket_id}: {e}")
+            ticket_doc = None
+            if tickets is not None:
+                ticket_doc = next((t for t in tickets if str(t.get("_id") or t.get("id")) == ticket_id), None)
+            else:
+                try:
+                    ticket_doc = await self.tickets.find_one({"_id": MongoModel.to_object_id(ticket_id)})
+                except Exception as e:
+                    logger.warning(f"Error fetching ticket {ticket_id}: {e}")
+            if ticket_doc:
+                category = category or ticket_doc.get("category")
+                subcategory = subcategory or ticket_doc.get("subcategory")
+                priority = priority or ticket_doc.get("priority")
+                impact = impact or ticket_doc.get("impact")
+                urgency = urgency or ticket_doc.get("urgency")
+                agent_id = agent_id or str(ticket_doc.get("assigned_agent_id", ""))
 
         # Normalize priority
         prio_str = "MEDIUM"
@@ -845,46 +829,9 @@ class PredictiveAnalyticsService:
                 if r_note and len(r_note.strip()) > 10 and r_note.strip() not in solutions:
                     solutions.append(r_note.strip())
 
-            # Domain root cause & action plan
-            kw_text = " ".join(top_keywords) + " " + cat.lower()
-            if "vpn" in kw_text or "réseau" in kw_text or "connexion" in kw_text:
-                root_cause = "Instabilité de passerelle réseau ou certificat d'accès distant expiré lors des pics d'usage."
-                preventive_plan = [
-                    "Déployer la mise à jour corrective du client VPN et des profils réseau",
-                    "Surveiller la charge maximale sur le concentrateur aux heures de pointe",
-                    "Mettre à jour la documentation d'accès distant pour les utilisateurs"
-                ]
-            elif "mot de passe" in kw_text or "auth" in kw_text or "login" in kw_text or "compte" in kw_text:
-                root_cause = "Verrouillage de compte suite à expiration de politique de mot de passe ou échec de synchronisation SSO."
-                preventive_plan = [
-                    "Avertir les utilisateurs par email automatique à J-7 avant expiration du mot de passe",
-                    "Promouvoir le self-service de réinitialisation 2FA",
-                    "Vérifier la latence de réplication des annuaires d'authentification"
-                ]
-            elif "imprimante" in kw_text or "print" in kw_text:
-                root_cause = "Spooler d'impression bloqué ou pilote d'imprimante réseau obsolète sur les postes clients."
-                preventive_plan = [
-                    "Redémarrer préventivement le service Spooler d'impression",
-                    "Harmoniser les versions de pilotes d'impression réseau via GPO",
-                    "Vérifier la connectivité des bacs et de l'adresse IP fixe de l'imprimante"
-                ]
-            elif "messagerie" in kw_text or "mail" in kw_text or "outlook" in kw_text:
-                root_cause = "Saturation de boîte aux lettres ou corruption du profil de messagerie locale."
-                preventive_plan = [
-                    "Archiver les messages volumineux et libérer de l'espace de stockage",
-                    "Réparer le fichier de données de messagerie (.ost / .pst)",
-                    "Vérifier les règles de filtrage anti-spam et les quotas"
-                ]
-            else:
-                root_cause = f"Défaillance répétée liée au composant '{cat} > {subcat or 'Standard'}', nécessitant une intervention récurrente."
-                preventive_plan = [
-                    f"Rédiger une procédure opératoire standardisée pour '{cat}'",
-                    "Former le support N1 à la résolution au premier contact",
-                    "Automatiser le diagnostic via un script de test dédié"
-                ]
-
-            if not solutions:
-                solutions.append(f"Appliquer la procédure standard de résolution pour la catégorie {cat}.")
+            # Ticket recurrence is observed; root cause and action plans require investigation.
+            root_cause = "Cause non déterminée à partir des seuls tickets récurrents."
+            preventive_plan = []
 
             # Sample tickets
             samples = [
@@ -912,7 +859,7 @@ class PredictiveAnalyticsService:
                 occurrence_count=count,
                 status=status_str,
                 impact_level=impact,
-                estimated_hours_lost=round(count * 1.8, 1),
+                estimated_hours_lost=None,
                 first_seen=first_seen,
                 last_seen=last_seen,
                 average_similarity_pct=avg_sim,

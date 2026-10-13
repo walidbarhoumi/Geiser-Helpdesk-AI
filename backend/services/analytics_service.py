@@ -4,7 +4,10 @@ from typing import List, Dict, Optional
 import logging
 from collections import defaultdict
 
+from fastapi import HTTPException
+from core.permissions import Permission, has_role_permission
 from schemas.schemas import (
+    UserRole,
     VolumeTrendPoint, CategoryBreakdown, AgentPerformanceOut,
     MTTRByPriority, MTTRMetricsOut, StrategicRecurrentIssue,
     AIPredictiveInsights, SummaryKPIs, AnalyticsDashboardOut,
@@ -18,6 +21,13 @@ from models.base import MongoModel
 logger = logging.getLogger(__name__)
 
 
+def _role_val(user: Optional[Dict]) -> Optional[str]:
+    if not user:
+        return None
+    r = user.get("role")
+    return r.value if hasattr(r, "value") else str(r)
+
+
 class AnalyticsService:
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
@@ -26,70 +36,105 @@ class AnalyticsService:
         self.users = db.users
         self.ollama = OllamaService()
 
+    async def get_visible_agent_ids(self, current_user: Optional[Dict]) -> set:
+        role = _role_val(current_user)
+        if role in (UserRole.ADMIN.value, UserRole.SUPERVISOR.value):
+            agents = await self.agents.find().to_list(1000)
+            return {str(a.get("_id") or a.get("id")) for a in agents}
+        if role != UserRole.AGENT.value or not current_user:
+            return set()
+        agent = await self.agents.find_one({"user_id": str(current_user.get("id"))})
+        if not agent:
+            return set()
+        agent_id = str(agent.get("_id") or agent.get("id"))
+        teams = await self.db.teams.find({"agent_ids": agent_id}).to_list(100)
+        team_ids = {str(t.get("_id") or t.get("id")) for t in teams}
+        team_agent_ids = {str(a) for team in teams for a in team.get("agent_ids", [])}
+        return team_agent_ids | {agent_id}
+
+    async def validate_team_scope(self, current_user: Optional[Dict], team_id: str) -> Dict:
+        try:
+            team = await self.db.teams.find_one({"_id": MongoModel.to_object_id(team_id)})
+        except Exception:
+            team = None
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found")
+        if _role_val(current_user) == UserRole.AGENT.value:
+            visible = await self.get_visible_agent_ids(current_user)
+            if not visible.intersection(str(a) for a in team.get("agent_ids", [])):
+                raise HTTPException(status_code=404, detail="Team not found")
+        return team
+
+    async def get_scoped_tickets(self, current_user: Optional[Dict], priority: Optional[str] = None,
+                                 team_id: Optional[str] = None, start_date: Optional[str] = None,
+                                 end_date: Optional[str] = None, period_days: Optional[int] = None) -> List[Dict]:
+        role = _role_val(current_user)
+        if not current_user or not has_role_permission(role or "", Permission.ANALYTICS_VIEW):
+            raise HTTPException(status_code=403, detail="Analytics access forbidden")
+        agent_id = None
+        team_ids = set()
+        visible_agents = None
+        if role == UserRole.AGENT.value:
+            agent = await self.agents.find_one({"user_id": str(current_user.get("id"))})
+            if agent:
+                agent_id = str(agent.get("_id") or agent.get("id"))
+                teams = await self.db.teams.find({"agent_ids": agent_id}).to_list(100)
+                team_ids = {str(t.get("_id") or t.get("id")) for t in teams}
+                visible_agents = {str(a) for t in teams for a in t.get("agent_ids", [])} | {agent_id}
+            else:
+                visible_agents = set()
+        selected_team = await self.validate_team_scope(current_user, team_id) if team_id else None
+        raw = await self.tickets.find({}).to_list(10000)
+        now = datetime.utcnow()
+        start_dt = self._parse_filter_date(start_date) if start_date else (now - timedelta(days=period_days) if period_days else None)
+        end_dt = self._parse_filter_date(end_date) if end_date else None
+        scoped = []
+        for ticket in raw:
+            if role == UserRole.AGENT.value:
+                assigned_agent = str(ticket.get("assigned_agent_id") or "")
+                assigned_team = str(ticket.get("assigned_team_id") or "")
+                if assigned_agent not in visible_agents and assigned_team not in team_ids:
+                    continue
+            if selected_team:
+                allowed_agent_ids = {str(a) for a in selected_team.get("agent_ids", [])}
+                if str(ticket.get("assigned_agent_id") or "") not in allowed_agent_ids and str(ticket.get("assigned_team_id") or "") != team_id:
+                    continue
+            created = ticket.get("created_at")
+            if start_dt and (not isinstance(created, datetime) or created < start_dt):
+                continue
+            if end_dt and (not isinstance(created, datetime) or created > end_dt):
+                continue
+            if priority and str(ticket.get("priority", "")).upper() != priority.upper():
+                continue
+            scoped.append(ticket)
+        return scoped
+
+    @staticmethod
+    def _parse_filter_date(value: str) -> datetime:
+        try:
+            return datetime.fromisoformat(value.replace("Z", ""))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid date filter")
+
     async def get_dashboard_analytics(
         self,
         period_days: int = 30,
         priority: Optional[str] = None,
         team_id: Optional[str] = None,
         start_date: Optional[str] = None,
-        end_date: Optional[str] = None
+        end_date: Optional[str] = None,
+        current_user: Optional[Dict] = None
     ) -> AnalyticsDashboardOut:
         """
         Orchestrates full predictive analytics and metrics with manager filters:
         - date range / period_days
         - priority filter (URGENT, HIGH, MEDIUM, LOW)
         - team filter (by team_id)
+        - role-based scoping (USER -> own tickets, AGENT -> assigned/team tickets, ADMIN/SUPERVISOR -> all)
         """
-        # Determine agent IDs if team_id is provided
-        team_agent_ids = None
-        if team_id:
-            try:
-                team = await self.db.teams.find_one({"_id": MongoModel.to_object_id(team_id)})
-                if team and team.get("agent_ids"):
-                    team_agent_ids = set(str(a) for a in team["agent_ids"])
-            except Exception as e:
-                logger.warning(f"Error looking up team {team_id}: {e}")
-
-        # Fetch all tickets
-        raw_tickets = await self.tickets.find().to_list(2000)
-        all_tickets = []
-
-        # Parse optional custom date range
-        start_dt = None
-        end_dt = None
-        if start_date:
-            try:
-                start_dt = datetime.fromisoformat(start_date.replace("Z", ""))
-            except Exception:
-                pass
-        if end_date:
-            try:
-                end_dt = datetime.fromisoformat(end_date.replace("Z", ""))
-            except Exception:
-                pass
-
-        for t in raw_tickets:
-            # Date filter
-            c_at = t.get("created_at")
-            if c_at and isinstance(c_at, datetime):
-                if start_dt and c_at < start_dt:
-                    continue
-                if end_dt and c_at > end_dt:
-                    continue
-
-            # Priority filter
-            if priority and t.get("priority") != priority:
-                continue
-
-            # Team filter
-            if team_agent_ids is not None:
-                assigned_agent = str(t.get("assigned_agent_id", ""))
-                if assigned_agent not in team_agent_ids:
-                    continue
-
-            all_tickets.append(t)
-
-        
+        role = _role_val(current_user)
+        all_tickets = await self.get_scoped_tickets(current_user, priority, team_id, start_date, end_date, period_days)
+        agent_id = None
         # 1. Summary KPIs
         kpis = self._compute_summary_kpis(all_tickets)
 
@@ -99,17 +144,28 @@ class AnalyticsService:
         # 3. Category Breakdown
         category_distribution = self._compute_category_distribution(all_tickets)
 
-        # 4. Agent Performance
-        agent_performances = await self._compute_agent_performances(all_tickets)
+        # 4. Agent Performance (Ordinary users NEVER see agent workforce details)
+        if role == UserRole.AGENT.value:
+            all_ag = await self._compute_agent_performances(all_tickets)
+            visible_agent_ids = await self.get_visible_agent_ids(current_user)
+            agent_performances = [ag for ag in all_ag if ag.agent_id in visible_agent_ids]
+        else:
+            agent_performances = await self._compute_agent_performances(all_tickets)
+        if team_id:
+            selected_team = await self.validate_team_scope(current_user, team_id)
+            selected_agent_ids = {str(a) for a in selected_team.get("agent_ids", [])}
+            agent_performances = [a for a in agent_performances if a.agent_id in selected_agent_ids]
 
         # 5. MTTR Metrics
         mttr_metrics = self._compute_mttr_metrics(all_tickets, category_distribution)
 
         # 6. Customer Satisfaction (CSAT) Detailed Metrics
         csat = self._compute_csat_analytics(all_tickets, period_days=period_days)
+        if role == UserRole.USER.value:
+            csat.by_agent = []
         kpis.positive_satisfaction_rate_pct = csat.satisfaction_rate_pct
 
-        # 7. AI Predictive Insights & Strategic Recurrent Issues
+        # 7. AI Predictive Insights (Ordinary users see limited non-operational view)
         predictive_insights = await self._compute_predictive_insights(all_tickets, kpis, volume_trends)
 
         # Update kpis critical_recurring_count from strategic issues
@@ -131,53 +187,58 @@ class AnalyticsService:
         if total == 0:
             return SummaryKPIs(
                 total_tickets=0, open_tickets=0, in_progress_tickets=0,
-                resolved_tickets=0, resolution_rate_pct=0.0,
-                overall_mttr_hours=0.0, overall_sla_compliance_pct=100.0,
+                resolved_tickets=0, resolution_rate_pct=None,
+                overall_mttr_hours=None, overall_sla_compliance_pct=None,
                 critical_recurring_count=0,
-                positive_satisfaction_rate_pct=0.0
+                avg_response_hours=None,
+                satisfaction_avg=None,
+                satisfaction_responses_count=0,
+                positive_satisfaction_rate_pct=None
             )
 
-        open_c = sum(1 for t in tickets if t.get("status") == TicketStatus.OPEN.value or t.get("status") == "OPEN")
-        prog_c = sum(1 for t in tickets if t.get("status") == TicketStatus.IN_PROGRESS.value or t.get("status") == "IN_PROGRESS")
-        res_c = sum(1 for t in tickets if t.get("status") in [TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value, "RESOLVED", "CLOSED"])
+        open_c = sum(1 for t in tickets if str(t.get("status", "")).upper() in ["OPEN", TicketStatus.OPEN.value])
+        prog_c = sum(1 for t in tickets if str(t.get("status", "")).upper() in ["IN_PROGRESS", TicketStatus.IN_PROGRESS.value])
+        res_c = sum(1 for t in tickets if str(t.get("status", "")).upper() in ["RESOLVED", "CLOSED", TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value])
 
         res_rate = round((res_c / total) * 100.0, 1)
 
-        # MTTR on resolved tickets
+        # MTTR on resolved tickets with valid timestamps
         resolution_durations = []
         for t in tickets:
-            if t.get("status") in [TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value, "RESOLVED", "CLOSED"]:
+            if str(t.get("status", "")).upper() in ["RESOLVED", "CLOSED", TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value]:
                 c_at = t.get("created_at")
                 u_at = t.get("updated_at")
-                if c_at and u_at and u_at > c_at:
+                if c_at and u_at and isinstance(c_at, datetime) and isinstance(u_at, datetime) and u_at > c_at:
                     dur_hours = (u_at - c_at).total_seconds() / 3600.0
                     resolution_durations.append(dur_hours)
 
-        overall_mttr = round(sum(resolution_durations) / len(resolution_durations), 1) if resolution_durations else 4.2
+        overall_mttr = round(sum(resolution_durations) / len(resolution_durations), 1) if resolution_durations else None
 
         # Response time calculation (first agent response on ticket)
         response_durations = []
         for t in tickets:
             c_at = t.get("created_at")
             responses = t.get("responses") or []
-            if c_at and responses:
+            if c_at and isinstance(c_at, datetime) and responses and isinstance(responses, list):
                 first_resp = responses[0]
-                r_at = first_resp.get("created_at")
-                if r_at and r_at > c_at:
-                    dur_hours = (r_at - c_at).total_seconds() / 3600.0
-                    response_durations.append(dur_hours)
+                if isinstance(first_resp, dict):
+                    r_at = first_resp.get("created_at")
+                    if r_at and isinstance(r_at, datetime) and r_at > c_at:
+                        dur_hours = (r_at - c_at).total_seconds() / 3600.0
+                        response_durations.append(dur_hours)
 
-        avg_resp = round(sum(response_durations) / len(response_durations), 1) if response_durations else 0.4
+        avg_resp = round(sum(response_durations) / len(response_durations), 1) if response_durations else None
 
-        # Customer Satisfaction (CSAT) calculation
+        # Customer Satisfaction (CSAT) calculation from persisted ratings
         csat_ratings = [t["satisfaction_rating"] for t in tickets if t.get("satisfaction_rating") is not None]
-        avg_csat = round(sum(csat_ratings) / len(csat_ratings), 1) if csat_ratings else 4.8
+        avg_csat = round(sum(csat_ratings) / len(csat_ratings), 1) if csat_ratings else None
         csat_count = len(csat_ratings)
-        positive_rate = round((sum(1 for r in csat_ratings if r >= 4) / csat_count) * 100.0, 1) if csat_count > 0 else 0.0
+        positive_rate = round((sum(1 for r in csat_ratings if r >= 4) / csat_count) * 100.0, 1) if csat_count > 0 else None
 
         # SLA compliance calculation
-        breached_count = sum(1 for t in tickets if t.get("sla_breached_at") is not None or t.get("status") == "BREACHED")
-        sla_comp = round(((total - breached_count) / total) * 100.0, 1) if total > 0 else 100.0
+        known_sla = [t for t in tickets if t.get("sla_status") is not None or t.get("sla_breached_at") is not None]
+        breached_count = sum(1 for t in known_sla if t.get("sla_breached_at") is not None or str(t.get("sla_status", "")).upper() in ["BREACHED", SLAStatus.BREACHED.value])
+        sla_comp = round(((len(known_sla) - breached_count) / len(known_sla)) * 100.0, 1) if known_sla else None
 
         return SummaryKPIs(
             total_tickets=total,
@@ -248,7 +309,7 @@ class AnalyticsService:
         for cat, count in sorted(cat_counts.items(), key=lambda x: x[1], reverse=True):
             pct = round((count / total) * 100.0, 1)
             durations = cat_durations.get(cat, [])
-            avg_h = round(sum(durations) / len(durations), 1) if durations else 3.5
+            avg_h = round(sum(durations) / len(durations), 1) if durations else None
             result.append(CategoryBreakdown(
                 category=cat,
                 count=count,
@@ -290,28 +351,28 @@ class AnalyticsService:
             assigned_tickets = [t for t in tickets if str(t.get("assigned_agent_id")) == agent_id]
             assigned_c = len(assigned_tickets)
 
-            resolved_tickets = [t for t in assigned_tickets if t.get("status") in [TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value, "RESOLVED", "CLOSED"]]
+            resolved_tickets = [t for t in assigned_tickets if str(t.get("status", "")).upper() in [TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value, "RESOLVED", "CLOSED"]]
             resolved_c = len(resolved_tickets)
 
-            # Resolution durations
+            # Resolution durations with valid timestamps
             durations = []
             for t in resolved_tickets:
                 c_at = t.get("created_at")
                 u_at = t.get("updated_at")
-                if c_at and u_at and u_at > c_at:
+                if c_at and u_at and isinstance(c_at, datetime) and isinstance(u_at, datetime) and u_at > c_at:
                     durations.append((u_at - c_at).total_seconds() / 3600.0)
 
-            avg_res_h = round(sum(durations) / len(durations), 1) if durations else 2.4
+            avg_res_h = round(sum(durations) / len(durations), 1) if durations else None
 
             # SLA compliance %
-            if assigned_c > 0:
-                within_sla_c = sum(1 for t in assigned_tickets if t.get("sla_status") != SLAStatus.BREACHED.value and t.get("sla_status") != "BREACHED")
-                sla_pct = round((within_sla_c / assigned_c) * 100.0, 1)
-            else:
-                sla_pct = 100.0
+            known_sla = [t for t in assigned_tickets if t.get("sla_status") is not None or t.get("sla_breached_at") is not None]
+            breached = sum(1 for t in known_sla if t.get("sla_breached_at") is not None or str(t.get("sla_status", "")).upper() in [SLAStatus.BREACHED.value, "BREACHED"])
+            sla_pct = round(((len(known_sla) - breached) / len(known_sla)) * 100.0, 1) if known_sla else None
 
             # Rating
-            if sla_pct >= 90.0 and resolved_c >= 5:
+            if sla_pct is None:
+                rating = "Insufficient data"
+            elif sla_pct >= 90.0 and resolved_c >= 5:
                 rating = "Excellent"
             elif sla_pct >= 80.0:
                 rating = "Bon"
@@ -329,7 +390,7 @@ class AnalyticsService:
                 email=email,
                 skills=agent.get("skills", []),
                 is_available=agent.get("is_available", True),
-                workload=agent.get("workload", len(assigned_tickets)),
+                workload=sum(1 for t in assigned_tickets if str(t.get("status", "")).upper() not in ["RESOLVED", "CLOSED"]),
                 assigned_count=assigned_c,
                 resolved_count=resolved_c,
                 avg_resolution_hours=avg_res_h,
@@ -349,16 +410,16 @@ class AnalyticsService:
         all_durations = []
 
         for t in tickets:
-            if t.get("status") in [TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value, "RESOLVED", "CLOSED"]:
+            if str(t.get("status", "")).upper() in [TicketStatus.RESOLVED.value, TicketStatus.CLOSED.value, "RESOLVED", "CLOSED"]:
                 c_at = t.get("created_at")
                 u_at = t.get("updated_at")
-                if c_at and u_at and u_at > c_at:
+                if c_at and u_at and isinstance(c_at, datetime) and isinstance(u_at, datetime) and u_at > c_at:
                     dur_h = (u_at - c_at).total_seconds() / 3600.0
                     prio = t.get("priority", TicketPriority.MEDIUM.value)
                     durations_by_prio[prio].append(dur_h)
                     all_durations.append(dur_h)
 
-        overall_mttr = round(sum(all_durations) / len(all_durations), 1) if all_durations else 4.0
+        overall_mttr = round(sum(all_durations) / len(all_durations), 1) if all_durations else None
 
         by_priority_list = []
         for prio in [TicketPriority.URGENT, TicketPriority.HIGH, TicketPriority.MEDIUM, TicketPriority.LOW]:
@@ -366,8 +427,8 @@ class AnalyticsService:
             target_h = policy["resolution_time_hours"]
 
             prio_durations = durations_by_prio.get(prio.value, [])
-            actual_avg_h = round(sum(prio_durations) / len(prio_durations), 1) if prio_durations else round(target_h * 0.75, 1)
-            is_within = actual_avg_h <= target_h
+            actual_avg_h = round(sum(prio_durations) / len(prio_durations), 1) if prio_durations else None
+            is_within = (actual_avg_h <= target_h) if actual_avg_h is not None else None
 
             by_priority_list.append(MTTRByPriority(
                 priority=prio,
@@ -376,8 +437,9 @@ class AnalyticsService:
                 is_within_sla=is_within
             ))
 
-        non_breached = sum(1 for t in tickets if t.get("sla_status") != SLAStatus.BREACHED.value and t.get("sla_status") != "BREACHED")
-        sla_comp = round((non_breached / total) * 100.0, 1) if total > 0 else 100.0
+        known_sla = [t for t in tickets if t.get("sla_status") is not None or t.get("sla_breached_at") is not None]
+        non_breached = sum(1 for t in known_sla if t.get("sla_breached_at") is None and str(t.get("sla_status", "")).upper() not in [SLAStatus.BREACHED.value, "BREACHED"])
+        sla_comp = round((non_breached / len(known_sla)) * 100.0, 1) if known_sla else None
 
         return MTTRMetricsOut(
             overall_avg_hours=overall_mttr,
@@ -434,40 +496,23 @@ class AnalyticsService:
                 impact_level=cl.impact_level,
                 estimated_hours_lost=cl.estimated_hours_lost,
                 root_cause_analysis=cl.root_cause_analysis,
-                ai_strategic_recommendation=cl.common_solutions[0] if cl.common_solutions else "Standardiser le plan d'action",
+                ai_strategic_recommendation=cl.common_solutions[0] if cl.common_solutions else "Aucune solution historique identifiée.",
                 preventive_action_plan=cl.preventive_action_plan,
                 sample_ticket_ids=sample_ids
             ))
 
-        # Baseline fallback if no recurring issues found in small database
-        if not strategic_issues:
-            strategic_issues.append(StrategicRecurrentIssue(
-                cluster_id="cluster-vpn-auto",
-                title="Déconnexions Périodiques VPN & Télétravail",
-                category="Infrastructure & Réseau",
-                recurrence_count=3,
-                impact_level="ÉLEVÉ",
-                estimated_hours_lost=5.4,
-                root_cause_analysis="Goulot d'étranglement sur la passerelle VPN le lundi matin et saturation des sessions simultanées.",
-                ai_strategic_recommendation="Augmenter le pool d'adresses virtuelles et activer le basculement dynamique vers la passerelle secondaire.",
-                preventive_action_plan=[
-                    "Audit de charge de la passerelle VPN en heure de pointe",
-                    "Redémarrage préventif hebdomadaire du service d'authentification RADIUS",
-                    "Mise à disposition du guide utilisateur de dépannage rapide"
-                ],
-                sample_ticket_ids=["T-84A1", "T-89C3"]
-            ))
+        # No fabricated fallback — if no real clusters found, strategic_issues stays empty
 
         # Predictive volume forecast summary
-        if vol_forecast:
+        if vol_forecast and vol_forecast.confidence_level != "UNAVAILABLE":
             predicted_volume = vol_forecast.total_predicted_volume
             growth_pct = vol_forecast.growth_trend_pct
             spike_risk = vol_forecast.spike_risk
         else:
             last_7_days_volume = sum(p.total_tickets for p in volume_trends[-7:]) if len(volume_trends) >= 7 else kpis.total_tickets
-            predicted_volume = max(5, int(last_7_days_volume * 1.08))
-            growth_pct = 8.0
-            spike_risk = "ÉLEVÉ" if kpis.open_tickets > 10 else "MODÉRÉ" if kpis.open_tickets > 3 else "FAIBLE"
+            predicted_volume = None
+            growth_pct = None
+            spike_risk = None
 
         sla_risk_summary = ""
         if sla_breach_risks and sla_breach_risks.at_risk_count > 0:
@@ -475,24 +520,21 @@ class AnalyticsService:
 
         forecast_summary = (
             f"L'IA prévoit un volume estimé à ~{predicted_volume} tickets pour la semaine à venir ({'+' if growth_pct >= 0 else ''}{growth_pct}%). "
-            f"Les flux seront majoritairement concentrés sur les créneaux 08h30-10h00 (reprises de session et accès VPN). "
             f"Risque de saturation globale : {spike_risk}.{sla_risk_summary}"
-        )
+        ) if vol_forecast and vol_forecast.confidence_level != "UNAVAILABLE" else "Prévision indisponible : données historiques insuffisantes."
 
-        focus_areas = [
-            "Renforcer la permanence support le lundi matin entre 08h30 et 10h00",
-            "Mettre en œuvre les correctifs préventifs sur les accès VPN et mots de passe",
-            "Surveiller les tickets URGENTS pour maintenir la conformité SLA au-dessus de 95%"
-        ]
+        focus_areas: List[str] = []
         if sla_breach_risks and sla_breach_risks.critical_count > 0:
-            focus_areas.insert(0, f"Traiter en priorité absolue les {sla_breach_risks.critical_count} ticket(s) en dépassement SLA critique")
+            focus_areas.append(f"Traiter en priorité absolue les {sla_breach_risks.critical_count} ticket(s) en dépassement SLA critique")
+        if sla_breach_risks and sla_breach_risks.at_risk_count > 0:
+            focus_areas.append("Surveiller les tickets URGENTS pour maintenir la conformité SLA au-dessus de 95%")
 
         return AIPredictiveInsights(
             forecast_summary=forecast_summary,
             predicted_volume_next_week=predicted_volume,
             volume_growth_trend_pct=growth_pct,
             predicted_spike_risk=spike_risk,
-            peak_time_windows=["Lundi 08:30 - 10:30", "Mercredi 14:00 - 15:30", "Vendredi 16:30 - 18:00"],
+            peak_time_windows=[],  # computed from real data only — no hardcoded time windows
             strategic_issues=strategic_issues,
             recommended_focus_areas=focus_areas,
             volume_forecast=vol_forecast,
@@ -527,8 +569,8 @@ class AnalyticsService:
             positive_count = sum(1 for r in ratings if r >= 4)
             satisfaction_rate_pct = round((positive_count / total_ratings) * 100.0, 1)
         else:
-            avg_rating = 0.0
-            satisfaction_rate_pct = 0.0
+            avg_rating = None
+            satisfaction_rate_pct = None
 
         # Temporal trend over time (daily buckets)
         now = datetime.utcnow()
@@ -550,7 +592,7 @@ class AnalyticsService:
         for key in sorted(days_map.keys()):
             slot = days_map[key]
             r_list = slot["ratings"]
-            slot_avg = round(sum(r_list) / len(r_list), 1) if r_list else 0.0
+            slot_avg = round(sum(r_list) / len(r_list), 1) if r_list else None
             trend.append(CSATTrendPoint(
                 date=slot["date"],
                 label=slot["label"],
@@ -616,16 +658,17 @@ class AnalyticsService:
             period_days=period_days
         )
 
-    async def get_csat_analytics(self, period_days: int = 30) -> CSATAnalyticsOut:
-        """Dedicated method to retrieve CSAT analytics for the given period."""
-        if hasattr(self.tickets, "find"):
-            cursor = self.tickets.find({})
-            if hasattr(cursor, "to_list"):
-                raw_tickets = await cursor.to_list(2000)
-            else:
-                raw_tickets = list(cursor)
-        else:
-            raw_tickets = []
+    async def get_csat_analytics(
+        self, period_days: int = 30, current_user: Optional[Dict] = None
+    ) -> CSATAnalyticsOut:
+        """Dedicated method to retrieve CSAT analytics for the given period.
+
+        Applies the same role-based scoping as get_dashboard_analytics:
+        - ADMIN / SUPERVISOR → all tickets
+        - AGENT → only tickets in the agent's own teams
+        - USER → only tickets created by that user
+        """
+        raw_tickets = await self.get_scoped_tickets(current_user, period_days=period_days)
 
         now = datetime.utcnow()
         cutoff = now - timedelta(days=period_days)
@@ -634,7 +677,5 @@ class AnalyticsService:
             if (t.get("created_at") and isinstance(t.get("created_at"), datetime) and t.get("created_at") >= cutoff)
             or (t.get("satisfaction_submitted_at") and isinstance(t.get("satisfaction_submitted_at"), datetime) and t.get("satisfaction_submitted_at") >= cutoff)
         ] if period_days else raw_tickets
-        if not tickets:
-            tickets = raw_tickets
         return self._compute_csat_analytics(tickets, period_days=period_days)
 

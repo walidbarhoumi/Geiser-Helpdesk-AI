@@ -384,8 +384,8 @@ async def test_10_upload_rbac_unauthorized_user(mock_db, fake_ticket_id, other_r
     with pytest.raises(HTTPException) as exc_info:
         await svc.upload_attachment(fake_ticket_id, file, other_regular_user)
 
-    assert exc_info.value.status_code == 403
-    assert "refus" in exc_info.value.detail.lower()
+    assert exc_info.value.status_code == 404
+    assert "introuvable" in exc_info.value.detail.lower()
 
 
 @pytest.mark.asyncio
@@ -408,9 +408,15 @@ async def test_11_upload_rbac_owner_allowed(mock_db, fake_ticket_id, ticket_owne
 @pytest.mark.asyncio
 async def test_12_upload_rbac_agent_admin_allowed(mock_db, fake_ticket_id, ticket_owner_user, admin_user, assigned_agent_user):
     svc = AttachmentService(mock_db)
+    assigned_agent_id = ObjectId()
     mock_db.tickets.find_one = AsyncMock(return_value={
         "_id": ObjectId(fake_ticket_id),
         "user_id": ticket_owner_user["id"],
+        "assigned_agent_id": str(assigned_agent_id),
+    })
+    mock_db.agents.find_one = AsyncMock(return_value={
+        "_id": assigned_agent_id,
+        "user_id": assigned_agent_user["id"],
     })
     mock_db.attachments.insert_one = AsyncMock(return_value=MagicMock(inserted_id=ObjectId()))
     mock_db.tickets.update_one = AsyncMock()
@@ -425,6 +431,29 @@ async def test_12_upload_rbac_agent_admin_allowed(mock_db, fake_ticket_id, ticke
         file_agent = make_upload_file("agent.pdf", b"%PDF-1.4 test", "application/pdf")
         res_agent = await svc.upload_attachment(fake_ticket_id, file_agent, assigned_agent_user)
         assert res_agent is not None
+
+
+@pytest.mark.asyncio
+async def test_unassigned_agent_cannot_upload_to_another_users_ticket(
+    mock_db, fake_ticket_id, ticket_owner_user, assigned_agent_user
+):
+    svc = AttachmentService(mock_db)
+    mock_db.tickets.find_one = AsyncMock(return_value={
+        "_id": ObjectId(fake_ticket_id),
+        "user_id": ticket_owner_user["id"],
+        "assigned_agent_id": str(ObjectId()),
+    })
+    mock_db.agents.find_one = AsyncMock(return_value={
+        "_id": ObjectId(), "user_id": assigned_agent_user["id"]
+    })
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.upload_attachment(
+            fake_ticket_id,
+            make_upload_file("agent.pdf", b"%PDF-1.4 test", "application/pdf"),
+            assigned_agent_user,
+        )
+    assert exc_info.value.status_code == 404
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -467,7 +496,7 @@ async def test_14_download_rbac_unauthorized_user(mock_db, fake_ticket_id, ticke
     with pytest.raises(HTTPException) as exc_info:
         await svc.get_attachment_for_download(fake_ticket_id, str(ObjectId()), other_regular_user)
 
-    assert exc_info.value.status_code == 403
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -484,10 +513,15 @@ async def test_15_download_rbac_owner_and_assigned_agent(
         f.write(b"%PDF-1.4 test")
 
     try:
+        assigned_agent_id = ObjectId()
         mock_db.tickets.find_one = AsyncMock(return_value={
             "_id": ObjectId(fake_ticket_id),
             "user_id": ticket_owner_user["id"],
-            "assigned_agent_id": assigned_agent_user["id"],
+            "assigned_agent_id": str(assigned_agent_id),
+        })
+        mock_db.agents.find_one = AsyncMock(return_value={
+            "_id": assigned_agent_id,
+            "user_id": assigned_agent_user["id"],
         })
         mock_db.attachments.find_one = AsyncMock(return_value={
             "_id": ObjectId(att_id),
@@ -613,7 +647,7 @@ async def test_19_list_attachments_rbac(mock_db, fake_ticket_id, ticket_owner_us
     # Unauthorized user
     with pytest.raises(HTTPException) as exc_info:
         await svc.list_attachments(fake_ticket_id, other_regular_user)
-    assert exc_info.value.status_code == 403
+    assert exc_info.value.status_code == 404
 
     # Authorized user
     mock_db.attachments.find = MagicMock(return_value=AsyncIter([

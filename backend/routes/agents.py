@@ -9,6 +9,22 @@ from models.base import MongoModel
 router = APIRouter()
 
 
+def _role_value(user):
+    role = user.get("role")
+    return role.value if hasattr(role, "value") else str(role)
+
+
+async def _agent_team_scope(db, user):
+    agent = await db.agents.find_one({"user_id": str(user.get("id"))})
+    if not agent:
+        return None, set(), set()
+    agent_id = str(agent.get("_id") or agent.get("id"))
+    teams = await db.teams.find({"agent_ids": agent_id}).to_list(100)
+    team_ids = {str(team.get("_id") or team.get("id")) for team in teams}
+    agent_ids = {str(member_id) for team in teams for member_id in team.get("agent_ids", [])}
+    return agent_id, team_ids, agent_ids | {agent_id}
+
+
 @router.post("/", response_model=AgentOut)
 async def create_agent(
     agent_in: AgentCreate,
@@ -49,19 +65,27 @@ async def list_agents(
     db=Depends(get_database)
 ):
     service = AgentService(db)
-    return await service.get_agents()
+    agents = await service.get_agents()
+    if _role_value(current_user) == UserRole.AGENT.value:
+        _, _, visible_agent_ids = await _agent_team_scope(db, current_user)
+        agents = [agent for agent in agents if str(agent.get("id")) in visible_agent_ids]
+    return agents
 
 
 @router.get("/{id}", response_model=AgentOut)
 async def get_agent(
     id: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(RoleChecker([UserRole.AGENT, UserRole.SUPERVISOR, UserRole.ADMIN])),
     db=Depends(get_database)
 ):
     service = AgentService(db)
     agent = await service.get_agent_by_id(id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    if _role_value(current_user) == UserRole.AGENT.value:
+        _, _, visible_agent_ids = await _agent_team_scope(db, current_user)
+        if id not in visible_agent_ids:
+            raise HTTPException(status_code=404, detail="Agent not found")
     return agent
 
 

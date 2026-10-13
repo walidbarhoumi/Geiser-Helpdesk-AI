@@ -18,6 +18,11 @@ from datetime import datetime
 router = APIRouter()
 
 
+def _role_value(user):
+    value = user.get("role") if isinstance(user, dict) else getattr(user, "role", None)
+    return value.value if hasattr(value, "value") else str(value)
+
+
 @router.get("/dashboard", response_model=AnalyticsDashboardOut)
 async def get_analytics_dashboard(
     period_days: int = Query(30, ge=7, le=90),
@@ -26,7 +31,7 @@ async def get_analytics_dashboard(
     start_date: Optional[str] = Query(None, description="Date de début ISO (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Date de fin ISO (YYYY-MM-DD)"),
     db: AsyncIOMotorDatabase = Depends(get_database),
-    current_user=Depends(get_current_user)
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT]))
 ):
     """
     Returns full predictive analytics and dashboard data for managers and agents:
@@ -39,7 +44,8 @@ async def get_analytics_dashboard(
         priority=priority,
         team_id=team_id,
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        current_user=current_user
     )
 
 
@@ -47,7 +53,7 @@ async def get_analytics_dashboard(
 async def get_csat_analytics(
     period_days: int = Query(30, ge=1, le=365, description="Nombre de jours d'analyse"),
     db: AsyncIOMotorDatabase = Depends(get_database),
-    current_user=Depends(get_current_user)
+    current_user=Depends(RoleChecker([UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.AGENT]))
 ):
     """
     Returns detailed Customer Satisfaction (CSAT) analytics:
@@ -60,7 +66,7 @@ async def get_csat_analytics(
     - Recent customer feedback comments
     """
     service = AnalyticsService(db)
-    return await service.get_csat_analytics(period_days=period_days)
+    return await service.get_csat_analytics(period_days=period_days, current_user=current_user)
 
 
 @router.get("/predictive-insights", response_model=AIPredictiveInsights)
@@ -72,7 +78,7 @@ async def get_predictive_insights(
     Returns strategic predictive insights, volume forecasts, SLA breach risks, and root-cause issues.
     """
     service = AnalyticsService(db)
-    dash = await service.get_dashboard_analytics(period_days=30)
+    dash = await service.get_dashboard_analytics(period_days=30, current_user=current_user)
     return dash.predictive_insights
 
 
@@ -86,7 +92,8 @@ async def get_volume_forecast(
     Forecast ticket volume for the next N days with trend analysis and spike risk indicators.
     """
     pred_svc = PredictiveAnalyticsService(db)
-    return await pred_svc.generate_volume_forecast(forecast_days=forecast_days)
+    scoped = await AnalyticsService(db).get_scoped_tickets(current_user)
+    return await pred_svc.generate_volume_forecast(tickets=scoped, forecast_days=forecast_days)
 
 
 @router.post("/predictive/resolution-time", response_model=ResolutionTimePredictionOut)
@@ -99,6 +106,15 @@ async def predict_resolution_time_post(
     Predict resolution time for specific ticket parameters (category, priority, urgency, impact, team).
     """
     pred_svc = PredictiveAnalyticsService(db)
+    scoped = await AnalyticsService(db).get_scoped_tickets(current_user)
+    if payload.ticket_id and not any(str(t.get("_id") or t.get("id")) == payload.ticket_id for t in scoped):
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if payload.assigned_agent_id and _role_value(current_user) == UserRole.AGENT.value:
+        visible = await AnalyticsService(db).get_visible_agent_ids(current_user)
+        if payload.assigned_agent_id not in visible:
+            raise HTTPException(status_code=404, detail="Agent not found")
+    if payload.assigned_team_id and _role_value(current_user) == UserRole.AGENT.value:
+        await AnalyticsService(db).validate_team_scope(current_user, payload.assigned_team_id)
     return await pred_svc.predict_resolution_time(
         category=payload.category,
         subcategory=payload.subcategory,
@@ -107,7 +123,8 @@ async def predict_resolution_time_post(
         urgency=payload.urgency,
         team_id=payload.assigned_team_id,
         agent_id=payload.assigned_agent_id,
-        ticket_id=payload.ticket_id
+        ticket_id=payload.ticket_id,
+        tickets=scoped
     )
 
 
@@ -126,13 +143,17 @@ async def predict_resolution_time_get(
     Predict resolution time via GET query parameters for quick client evaluation.
     """
     pred_svc = PredictiveAnalyticsService(db)
+    scoped = await AnalyticsService(db).get_scoped_tickets(current_user)
+    if ticket_id and not any(str(t.get("_id") or t.get("id")) == ticket_id for t in scoped):
+        raise HTTPException(status_code=404, detail="Ticket not found")
     return await pred_svc.predict_resolution_time(
         category=category,
         subcategory=subcategory,
         priority=priority,
         impact=impact,
         urgency=urgency,
-        ticket_id=ticket_id
+        ticket_id=ticket_id,
+        tickets=scoped
     )
 
 
@@ -145,7 +166,8 @@ async def get_sla_breach_risks(
     Identify active tickets that are at risk of breaching their SLA before resolution.
     """
     pred_svc = PredictiveAnalyticsService(db)
-    return await pred_svc.predict_sla_breach_risks()
+    scoped = await AnalyticsService(db).get_scoped_tickets(current_user)
+    return await pred_svc.predict_sla_breach_risks(active_tickets=scoped, all_tickets=scoped)
 
 
 @router.get("/recurring-tickets", response_model=RecurringIssuesResponse)
@@ -159,7 +181,8 @@ async def get_recurring_tickets(
     Detect and group recurring tickets by category, keywords and semantic text similarity.
     """
     pred_svc = PredictiveAnalyticsService(db)
-    return await pred_svc.detect_recurring_tickets(min_similarity=min_similarity, min_cluster_size=min_cluster_size)
+    scoped = await AnalyticsService(db).get_scoped_tickets(current_user)
+    return await pred_svc.detect_recurring_tickets(tickets=scoped, min_similarity=min_similarity, min_cluster_size=min_cluster_size)
 
 
 @router.get("/recurring-tickets/{cluster_id}", response_model=RecurringClusterOut)
@@ -172,7 +195,8 @@ async def get_recurring_cluster_by_id(
     Get detailed information and sample tickets for a specific recurring ticket cluster.
     """
     pred_svc = PredictiveAnalyticsService(db)
-    recurring_resp = await pred_svc.detect_recurring_tickets()
+    scoped = await AnalyticsService(db).get_scoped_tickets(current_user)
+    recurring_resp = await pred_svc.detect_recurring_tickets(tickets=scoped)
     for cl in recurring_resp.clusters:
         if cl.cluster_id == cluster_id:
             return cl
@@ -202,11 +226,12 @@ async def export_excel_report(
         priority=priority,
         team_id=team_id,
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        current_user=current_user
     )
 
     # Fetch tickets matching filters for detailed sheet
-    raw_tickets = await db.tickets.find().to_list(1000)
+    raw_tickets = await service.get_scoped_tickets(current_user, priority=priority, team_id=team_id, start_date=start_date, end_date=end_date, period_days=period_days)
     
     # Enrich team label if provided
     team_name = "Toutes"
@@ -283,10 +308,11 @@ async def export_pdf_report(
         priority=priority,
         team_id=team_id,
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        current_user=current_user
     )
 
-    raw_tickets = await db.tickets.find().to_list(1000)
+    raw_tickets = await service.get_scoped_tickets(current_user, priority=priority, team_id=team_id, start_date=start_date, end_date=end_date, period_days=period_days)
 
     team_name = "Toutes"
     if team_id:

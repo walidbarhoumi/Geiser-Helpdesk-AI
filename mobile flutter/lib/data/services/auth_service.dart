@@ -5,10 +5,53 @@ import '../../core/constants/api_constants.dart';
 import '../models/user_model.dart';
 import 'api_client.dart';
 
+class LoginResult {
+  final bool success;
+  final bool requires2FA;
+  final String? email;
+  final String? message;
+  final UserModel? user;
+  final String? error;
+
+  LoginResult({
+    required this.success,
+    this.requires2FA = false,
+    this.email,
+    this.message,
+    this.user,
+    this.error,
+  });
+
+  factory LoginResult.successResult(UserModel user) {
+    return LoginResult(
+      success: true,
+      requires2FA: false,
+      user: user,
+    );
+  }
+
+  factory LoginResult.twoFactorRequired({required String email, String? message}) {
+    return LoginResult(
+      success: false,
+      requires2FA: true,
+      email: email,
+      message: message,
+    );
+  }
+
+  factory LoginResult.failure(String error) {
+    return LoginResult(
+      success: false,
+      requires2FA: false,
+      error: error,
+    );
+  }
+}
+
 class AuthService {
   final Dio _dio = ApiClient().dio;
 
-  Future<UserModel?> login(String email, String password) async {
+  Future<LoginResult> login(String email, String password) async {
     try {
       final response = await _dio.post(
         ApiConstants.login,
@@ -17,22 +60,71 @@ class AuthService {
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
+
+        // Check if Two-Factor Authentication is triggered
+        if (data['requires_2fa'] == true) {
+          return LoginResult.twoFactorRequired(
+            email: data['email'] ?? email,
+            message: data['message'] ?? 'Code de vérification envoyé par e-mail.',
+          );
+        }
+
         final token = data['access_token'];
+        final refreshToken = data['refresh_token'];
         final userData = data['user'];
 
         if (token != null && userData != null) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(ApiConstants.tokenKey, token);
+          if (refreshToken != null) {
+            await prefs.setString(ApiConstants.refreshTokenKey, refreshToken);
+          }
+          await prefs.setString(ApiConstants.userKey, jsonEncode(userData));
+          return LoginResult.successResult(UserModel.fromJson(userData));
+        }
+      }
+      return LoginResult.failure('Réponse invalide du serveur');
+    } on DioException catch (e) {
+      final msg = e.response?.data?['detail'] ?? 'Identifiants invalides';
+      return LoginResult.failure(msg.toString());
+    } catch (e) {
+      return LoginResult.failure('Erreur de connexion : $e');
+    }
+  }
+
+  /// Verify 2FA OTP code during login: POST /auth/verify-2fa
+  Future<UserModel> verify2FALogin(String email, String code) async {
+    try {
+      final response = await _dio.post(
+        ApiConstants.verify2FA,
+        data: {
+          'email': email,
+          'code': code.trim(),
+        },
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data;
+        final token = data['access_token'];
+        final refreshToken = data['refresh_token'];
+        final userData = data['user'];
+
+        if (token != null && userData != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(ApiConstants.tokenKey, token);
+          if (refreshToken != null) {
+            await prefs.setString(ApiConstants.refreshTokenKey, refreshToken);
+          }
           await prefs.setString(ApiConstants.userKey, jsonEncode(userData));
           return UserModel.fromJson(userData);
         }
       }
-      return null;
+      throw Exception('Format de réponse invalide');
     } on DioException catch (e) {
-      final msg = e.response?.data?['detail'] ?? 'Identifiants invalides';
+      final msg = e.response?.data?['detail'] ?? 'Code 2FA invalide ou expiré';
       throw Exception(msg);
     } catch (e) {
-      throw Exception('Erreur de connexion : $e');
+      throw Exception('Erreur de validation 2FA : $e');
     }
   }
 
@@ -48,11 +140,12 @@ class AuthService {
         },
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
-        return await login(email, password);
+        final loginRes = await login(email, password);
+        return loginRes.user;
       }
       return null;
     } on DioException catch (e) {
-      final msg = e.response?.data?['detail'] ?? 'Erreur lors de l inscription';
+      final msg = e.response?.data?['detail'] ?? 'Erreur lors de l\'inscription';
       throw Exception(msg);
     }
   }
@@ -79,10 +172,10 @@ class AuthService {
       // Always proceed with local logout even if offline or server returns 401
     } finally {
       await prefs.remove(ApiConstants.tokenKey);
+      await prefs.remove(ApiConstants.refreshTokenKey);
       await prefs.remove(ApiConstants.userKey);
     }
   }
-
 
   // ── 2FA Management ──────────────────────────────────────────────
 
@@ -139,7 +232,6 @@ class AuthService {
 }
 
 /// Static convenience wrapper used by profile_screen.dart
-/// Delegates to a shared AuthService instance.
 class AuthApiService {
   static final AuthService _svc = AuthService();
 
@@ -149,4 +241,3 @@ class AuthApiService {
   static Future<void> requestDisable2FA(String password) => _svc.requestDisable2FA(password);
   static Future<void> confirmDisable2FA(String code) => _svc.confirmDisable2FA(code);
 }
-

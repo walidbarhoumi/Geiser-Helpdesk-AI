@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Search, Plus, Loader2, Shield, Edit2, Trash2,
   X, Users, Zap, Filter, MoreVertical,
-  Sparkles, UserCheck
+  Sparkles, UserCheck, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { User, UserRole } from '../../types';
@@ -425,14 +425,20 @@ const UserList: React.FC = () => {
   });
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
+  const [listError, setListError] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     setLoading(true);
+    setListError(null);
     try {
       const res = await api.get('/users');
-      setUsers(res.data);
-    } catch { /* silent */ }
-    finally { setLoading(false); }
+      setUsers(Array.isArray(res.data) ? res.data : []);
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to load workspace members.';
+      setListError(typeof msg === 'string' ? msg : 'Failed to load workspace members.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchUsers(); }, []);
@@ -647,6 +653,37 @@ const UserList: React.FC = () => {
                   ))}
                 </tr>
               ))
+            ) : listError ? (
+              /* Explicit Error State */
+              <tr>
+                <td colSpan={5} style={{ padding: '60px', textAlign: 'center' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '56px', height: '56px', borderRadius: '16px',
+                      background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <AlertCircle size={24} style={{ color: '#f87171' }} />
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#fca5a5' }}>
+                      Unable to load members
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: 'rgba(255,255,255,0.4)', maxWidth: '360px' }}>
+                      {listError}
+                    </div>
+                    <button
+                      onClick={() => fetchUsers()}
+                      style={{
+                        marginTop: '8px', padding: '6px 16px', borderRadius: '10px',
+                        background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)',
+                        color: '#fca5a5', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                      }}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </td>
+              </tr>
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={5} style={{ padding: '60px', textAlign: 'center' }}>

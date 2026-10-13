@@ -88,10 +88,7 @@ class AttachmentService:
         """Verifies that current_user may access the given ticket.
         Raises 404 if ticket not found, 403 if access is denied.
 
-        - READ: owner (user_id) OR assigned agent OR ADMIN/SUPERVISOR
-        - WRITE (upload): owner OR AGENT/ADMIN/SUPERVISOR (any authenticated
-          agent-level user, mimicking the original broad write behaviour but
-          at least blocking random USERs uploading to someone else's ticket)
+        - READ/WRITE: owner, assigned agent/team member, or ADMIN/SUPERVISOR
         """
         oid = MongoModel.to_object_id(ticket_id)
         if not oid:
@@ -107,16 +104,27 @@ class AttachmentService:
             role = role.value
 
         is_owner = str(ticket.get("user_id", "")) == user_id
-        is_assigned_agent = str(ticket.get("assigned_agent_id", "")) == user_id
-        is_privileged = role in (UserRole.ADMIN.value, UserRole.SUPERVISOR.value, UserRole.AGENT.value)
+        is_privileged = role in (UserRole.ADMIN.value, UserRole.SUPERVISOR.value)
+        is_assigned_agent = False
+        if role == UserRole.AGENT.value:
+            agent = await self.db.agents.find_one({"user_id": user_id})
+            if agent:
+                agent_id = str(agent.get("_id", ""))
+                is_assigned_agent = str(ticket.get("assigned_agent_id", "")) == agent_id
+                assigned_team_id = ticket.get("assigned_team_id")
+                if not is_assigned_agent and assigned_team_id:
+                    teams = getattr(self.db, "teams", None)
+                    if teams is not None:
+                        team = await teams.find_one({
+                            "_id": MongoModel.to_object_id(str(assigned_team_id)),
+                            "agent_ids": agent_id,
+                        })
+                        is_assigned_agent = team is not None
 
-        if write_access:
-            allowed = is_owner or is_privileged
-        else:
-            allowed = is_owner or is_assigned_agent or is_privileged
+        allowed = is_owner or is_assigned_agent or is_privileged
 
         if not allowed:
-            raise HTTPException(status_code=403, detail="Accès refusé à ce ticket")
+            raise HTTPException(status_code=404, detail="Ticket introuvable")
 
         return ticket
 

@@ -27,6 +27,45 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _role_value(user: dict) -> str:
+    role = user.get("role")
+    return role.value if hasattr(role, "value") else str(role)
+
+
+async def _agent_scope(db, user: dict):
+    """Return the agent record and teams available to this authenticated agent."""
+    agent = await db.agents.find_one({"user_id": str(user.get("id"))})
+    if not agent:
+        return None, set()
+    agent_id = str(agent.get("_id"))
+    teams = await db.teams.find({"agent_ids": agent_id}).to_list(length=100)
+    return agent, {str(team.get("_id")) for team in teams}
+
+
+async def _ticket_in_scope(db, ticket: dict, user: dict) -> bool:
+    role = _role_value(user)
+    if role in (UserRole.ADMIN.value, UserRole.SUPERVISOR.value):
+        return True
+    if role == UserRole.USER.value:
+        return str(ticket.get("user_id")) == str(user.get("id"))
+    if role == UserRole.AGENT.value:
+        agent, team_ids = await _agent_scope(db, user)
+        if not agent:
+            return False
+        return (
+            str(ticket.get("assigned_agent_id")) == str(agent.get("_id"))
+            or str(ticket.get("assigned_team_id")) in team_ids
+        )
+    return False
+
+
+async def _require_ticket_scope(db, ticket: dict, user: dict) -> None:
+    # Use 404 for out-of-scope tickets so callers cannot distinguish them
+    # from ticket IDs that do not exist.
+    if not await _ticket_in_scope(db, ticket, user):
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+
 @router.post("/{id}/auto-route", response_model=RoutingResult)
 async def auto_route_ticket(
     id: str,
@@ -34,6 +73,10 @@ async def auto_route_ticket(
     db=Depends(get_database)
 ):
     """Triggers the intelligent AI routing for a specific ticket."""
+    ticket = await TicketService(db).get_ticket(id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    await _require_ticket_scope(db, ticket, current_user)
     service = RoutingService(db)
     try:
         result = await service.auto_route_ticket(id)
@@ -93,6 +136,14 @@ async def list_tickets(
     # Non-admins and non-agents only see their own tickets
     if current_user["role"] == UserRole.USER:
         filters["user_id"] = current_user["id"]
+    elif _role_value(current_user) == UserRole.AGENT.value:
+        agent, team_ids = await _agent_scope(db, current_user)
+        if not agent:
+            return []
+        scope = [{"assigned_agent_id": str(agent.get("_id"))}]
+        if team_ids:
+            scope.append({"assigned_team_id": {"$in": list(team_ids)}})
+        filters["$or"] = scope
 
     return await TicketController.get_tickets(filters, db)
 
@@ -107,9 +158,7 @@ async def get_ticket(
     ticket = await service.get_ticket(id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    # Ensure users can only view their own tickets (unless agent/admin)
-    if current_user["role"] == UserRole.USER and ticket["user_id"] != current_user["id"]:
-        raise HTTPException(status_code=403, detail="Access denied")
+    await _require_ticket_scope(db, ticket, current_user)
     return ticket
 
 
@@ -138,9 +187,20 @@ async def update_status(
     db=Depends(get_database)
 ):
     service = TicketService(db)
-    ticket = await service.update_status(id, body.status, actor_user=current_user)
-    if not ticket:
+    current_ticket = await service.get_ticket(id)
+    if not current_ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    await _require_ticket_scope(db, current_ticket, current_user)
+    requested_status = body.status.value if hasattr(body.status, "value") else str(body.status)
+    if (
+        _role_value(current_user) == UserRole.AGENT.value
+        and requested_status == TicketStatus.CLOSED.value
+    ):
+        raise HTTPException(status_code=403, detail="Agents cannot close tickets")
+    try:
+        ticket = await service.update_status(id, body.status, actor_user=current_user)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return ticket
 
 
@@ -151,13 +211,49 @@ async def update_ticket(
     current_user=Depends(get_current_user),
     db=Depends(get_database)
 ):
-    """General ticket update — allows updating status, priority, and assigned_agent_id."""
+    """Update permitted ticket fields after role and record-scope checks."""
     service = TicketService(db)
     ticket = await service.get_ticket(id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
+    await _require_ticket_scope(db, ticket, current_user)
+
+    role = _role_value(current_user)
+    user_fields = {"subject", "description"}
+    agent_fields = {
+        "subject", "description", "category", "subcategory", "status",
+        "keywords", "resolution_note",
+    }
+    supervisor_fields = agent_fields | {"priority_source", "routing_reason"}
+    allowed_fields = {
+        UserRole.USER.value: user_fields,
+        UserRole.AGENT.value: agent_fields,
+        UserRole.SUPERVISOR.value: supervisor_fields,
+        UserRole.ADMIN.value: supervisor_fields,
+    }.get(role, set())
+
     update_data = ticket_in.dict(exclude_unset=True)
+    if "assigned_agent_id" in update_data:
+        # Assignment uses the dedicated supervisor/admin-only /assign route.
+        raise HTTPException(status_code=403, detail="Assignment changes are not permitted here")
+    if not set(update_data).issubset(allowed_fields):
+        raise HTTPException(status_code=403, detail="One or more ticket fields cannot be updated")
+
+    if "status" in update_data:
+        status = update_data.pop("status")
+        status_value = status.value if hasattr(status, "value") else str(status)
+        if role == UserRole.AGENT.value and status_value == TicketStatus.CLOSED.value:
+            raise HTTPException(status_code=403, detail="Agents cannot close tickets")
+        try:
+            await service.update_status(id, status, actor_user=current_user)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    if not update_data:
+        updated_ticket = await service.get_ticket(id)
+        return updated_ticket
+
     # Convert enums to their string values for MongoDB storage
     for key, val in update_data.items():
         if hasattr(val, "value"):
@@ -254,6 +350,7 @@ async def send_ticket_response(
     ticket = await service.get_ticket(id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    await _require_ticket_scope(db, ticket, current_user)
 
     user = await db.users.find_one({"_id": MongoModel.to_object_id(ticket["user_id"])})
     if user and user.get("email"):
@@ -326,16 +423,21 @@ async def resolve_ticket(
     ticket = await service.get_ticket(id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    await _require_ticket_scope(db, ticket, current_user)
 
     oid = MongoModel.to_object_id(id)
     now = datetime.utcnow()
+
+    try:
+        await service.update_status(id, TicketStatus.RESOLVED, actor_user=current_user)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # Update ticket to RESOLVED with resolution note
     await db.tickets.update_one(
         {"_id": oid},
         {
             "$set": {
-                "status": TicketStatus.RESOLVED.value,
                 "resolution_note": body.resolution_note,
                 "updated_at": now
             }
@@ -412,14 +514,17 @@ async def submit_ticket_satisfaction(
             detail=f"Satisfaction rating can only be submitted for RESOLVED or CLOSED tickets (current status: {current_status})"
         )
 
-    # Only ticket creator or admin can rate
+    # Only the ticket creator or an administrator can rate.
     user_role = current_user.get("role")
     if hasattr(user_role, "value"):
         user_role = user_role.value
     current_user_id = str(current_user.get("id"))
     ticket_user_id = str(ticket.get("user_id"))
 
-    if user_role == UserRole.USER.value and ticket_user_id != current_user_id:
+    if not (
+        user_role == UserRole.ADMIN.value
+        or (user_role == UserRole.USER.value and ticket_user_id == current_user_id)
+    ):
         raise HTTPException(status_code=403, detail="Access denied: you can only rate your own tickets")
 
     # Prevent duplicate rating

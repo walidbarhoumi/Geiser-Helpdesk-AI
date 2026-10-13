@@ -30,15 +30,38 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> login(String email, String password) async {
+  Future<LoginResult> login(String email, String password) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      _currentUser = await _authService.login(email, password);
+      final result = await _authService.login(email, password);
+      if (result.success && result.user != null) {
+        _currentUser = result.user;
+      } else if (!result.requires2FA) {
+        _errorMessage = result.error ?? 'Identifiants invalides';
+      }
       _isLoading = false;
       notifyListeners();
-      return _currentUser != null;
+      return result;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _isLoading = false;
+      notifyListeners();
+      return LoginResult.failure(_errorMessage!);
+    }
+  }
+
+  Future<bool> verify2FA(String email, String code) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final user = await _authService.verify2FALogin(email, code);
+      _currentUser = user;
+      _isLoading = false;
+      notifyListeners();
+      return true;
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
       _isLoading = false;

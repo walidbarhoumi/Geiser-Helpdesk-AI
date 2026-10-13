@@ -49,32 +49,48 @@ class _ChatScreenState extends State<ChatScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        title: const Row(
+        backgroundColor: AppTheme.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
           children: [
-            Icon(Icons.confirmation_number_outlined, color: AppTheme.accent),
-            SizedBox(width: 8),
-            Text('Créer un ticket officiel', style: TextStyle(fontSize: 18)),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.accent.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.confirmation_number_outlined, color: AppTheme.accentLight, size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Créer un ticket officiel',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Transférer cette conversation au support N2. L IA classifiera l urgence et la catégorie.',
-              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+            Text(
+              'Transférer cette conversation au support N2. Le moteur IA classifiera automatiquement l\'urgence et le routage.',
+              style: TextStyle(
+                fontSize: 13,
+                color: AppTheme.textSecondary.withValues(alpha: 0.9),
+                height: 1.4,
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             TextField(
               controller: subjectController,
               decoration: const InputDecoration(
                 labelText: 'Objet personnalisé (optionnel)',
-                hintText: 'Ex: Panne VPN bloquante',
+                hintText: 'Ex: Panne VPN bloquante N2',
               ),
             ),
           ],
         ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -99,7 +115,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 );
               }
             },
-            child: const Text('Créer Ticket'),
+            child: const Text('Créer le ticket'),
           ),
         ],
       ),
@@ -112,38 +128,45 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 16,
         title: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
-                color: AppTheme.primary.withOpacity(0.2),
-                shape: BoxShape.circle,
+                gradient: AppTheme.primaryGradient,
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.smart_toy_outlined, color: AppTheme.primaryLight, size: 20),
+              child: const Icon(Icons.smart_toy_rounded, color: Colors.white, size: 20),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('GEISER Bot IA', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                Text('FAISS + Ollama 24/7', style: TextStyle(fontSize: 11, color: AppTheme.accentLight)),
+                Text(
+                  'Assistant IA GEISER',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: -0.2),
+                ),
+                Text(
+                  'RAG FAISS + Ollama 24/7',
+                  style: TextStyle(fontSize: 11, color: AppTheme.accentLight, fontWeight: FontWeight.w500),
+                ),
               ],
             ),
           ],
         ),
         actions: [
           IconButton(
-            tooltip: 'Nouvelle conversation',
-            icon: const Icon(Icons.refresh),
+            tooltip: 'Réinitialiser le fil',
+            icon: const Icon(Icons.refresh_rounded, size: 22),
             onPressed: () => chatProvider.clearMessages(),
           ),
           IconButton(
             tooltip: 'Créer un ticket officiel',
-            icon: const Icon(Icons.support_agent_outlined, color: AppTheme.accent),
+            icon: const Icon(Icons.support_agent_rounded, color: AppTheme.accentLight, size: 22),
             onPressed: _showEscalateDialog,
           ),
+          const SizedBox(width: 6),
         ],
       ),
       body: Column(
@@ -152,7 +175,7 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               itemCount: chatProvider.messages.length,
               itemBuilder: (context, index) {
                 final msg = chatProvider.messages[index];
@@ -161,58 +184,92 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // Indicateur de chargement IA
+          // Indicateur de chargement RAG
           if (chatProvider.isSending)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               alignment: Alignment.centerLeft,
               child: Row(
                 children: [
                   const SizedBox(
-                    width: 14,
-                    height: 14,
+                    width: 16,
+                    height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryLight),
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    'Recherche dans la base FAISS...',
-                    style: TextStyle(color: AppTheme.textSecondary.withOpacity(0.8), fontSize: 12),
+                    'Consultation de la base de connaissances FAISS...',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary.withValues(alpha: 0.9),
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
                 ],
               ),
             ),
 
-          // Zone d'entrée texte
+          // Zone d'entrée de message
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: const BoxDecoration(
               color: AppTheme.surface,
-              border: Border(top: BorderSide(color: AppTheme.surfaceLight, width: 0.5)),
+              border: Border(top: BorderSide(color: Color(0xFF1F293D), width: 1)),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _inputController,
-                    onSubmitted: (_) => _sendMessage(),
-                    decoration: InputDecoration(
-                      hintText: 'Décrivez votre panne technique...',
-                      fillColor: AppTheme.background,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
+            child: SafeArea(
+              top: false,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _inputController,
+                      onSubmitted: (_) => _sendMessage(),
+                      style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
+                      decoration: InputDecoration(
+                        hintText: 'Décrivez votre problème informatique...',
+                        hintStyle: TextStyle(
+                          color: AppTheme.textMuted.withValues(alpha: 0.8),
+                          fontSize: 14,
+                        ),
+                        fillColor: AppTheme.background,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: const BorderSide(color: Color(0xFF1F293D)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: const BorderSide(color: Color(0xFF1F293D)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: const BorderSide(color: AppTheme.primaryLight, width: 1.5),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                  style: IconButton.styleFrom(backgroundColor: AppTheme.primary),
-                  onPressed: chatProvider.isSending ? null : () => _sendMessage(),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      gradient: AppTheme.primaryGradient,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primary.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.send_rounded, color: Colors.white, size: 19),
+                      onPressed: chatProvider.isSending ? null : () => _sendMessage(),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -233,34 +290,50 @@ class _ChatScreenState extends State<ChatScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (!isUser) ...[
-                CircleAvatar(
-                  radius: 14,
-                  backgroundColor: AppTheme.accent.withOpacity(0.2),
-                  child: const Icon(Icons.smart_toy, size: 16, color: AppTheme.accent),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: AppTheme.accent.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.accentLight.withValues(alpha: 0.3)),
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.smart_toy_rounded, size: 18, color: AppTheme.accentLight),
+                  ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
               ],
               Flexible(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
                   decoration: BoxDecoration(
-                    color: isUser ? AppTheme.primary : AppTheme.surface,
+                    gradient: isUser ? AppTheme.primaryGradient : null,
+                    color: isUser ? null : AppTheme.surfaceElevated,
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: isUser ? const Radius.circular(16) : const Radius.circular(4),
-                      bottomRight: isUser ? const Radius.circular(4) : const Radius.circular(16),
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomLeft: isUser ? const Radius.circular(18) : const Radius.circular(4),
+                      bottomRight: isUser ? const Radius.circular(4) : const Radius.circular(18),
                     ),
                     border: isUser
                         ? null
-                        : Border.all(color: AppTheme.surfaceLight, width: 0.5),
+                        : Border.all(color: const Color(0xFF27354A), width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
                   ),
                   child: SelectableText(
                     msg.content,
                     style: TextStyle(
                       color: isUser ? Colors.white : AppTheme.textPrimary,
                       fontSize: 14,
-                      height: 1.4,
+                      height: 1.45,
+                      fontWeight: isUser ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
                 ),
@@ -270,18 +343,23 @@ class _ChatScreenState extends State<ChatScreen> {
 
           // Actions / Suggestions RAG
           if (msg.suggestedActions != null && msg.suggestedActions!.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Padding(
-              padding: const EdgeInsets.only(left: 36),
+              padding: const EdgeInsets.only(left: 42),
               child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
+                spacing: 8,
+                runSpacing: 8,
                 children: msg.suggestedActions!.map((action) {
                   return ActionChip(
-                    label: Text(action, style: const TextStyle(fontSize: 12)),
-                    backgroundColor: AppTheme.surfaceLight,
-                    side: BorderSide.none,
+                    avatar: const Icon(Icons.touch_app_outlined, size: 14, color: AppTheme.primaryLight),
+                    label: Text(
+                      action,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textPrimary),
+                    ),
+                    backgroundColor: AppTheme.surfaceElevated,
+                    side: const BorderSide(color: Color(0xFF2E3D56)),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     onPressed: () => _sendMessage(action),
                   );
                 }).toList(),
@@ -291,15 +369,20 @@ class _ChatScreenState extends State<ChatScreen> {
 
           // Bouton escalade automatique si problème complexe
           if (msg.canEscalate) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Padding(
-              padding: const EdgeInsets.only(left: 36),
+              padding: const EdgeInsets.only(left: 42),
               child: OutlinedButton.icon(
-                icon: const Icon(Icons.support_agent, size: 16, color: AppTheme.accent),
-                label: const Text('Créer un ticket avec ce problème', style: TextStyle(fontSize: 12, color: AppTheme.accent)),
+                icon: const Icon(Icons.support_agent_rounded, size: 16, color: AppTheme.accentLight),
+                label: const Text(
+                  'Créer un ticket avec cet incident',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.accentLight),
+                ),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppTheme.accent),
+                  side: BorderSide(color: AppTheme.accentLight.withValues(alpha: 0.4)),
+                  backgroundColor: AppTheme.accent.withValues(alpha: 0.1),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 ),
                 onPressed: _showEscalateDialog,
               ),

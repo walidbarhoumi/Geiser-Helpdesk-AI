@@ -489,15 +489,15 @@ const Dashboard: React.FC = () => {
               },
               {
                 label: 'Temps Moyen Résolution (MTTR)',
-                value: `${data.kpis.overall_mttr_hours}h`,
-                subtext: `Moyenne sur l'ensemble des tickets`,
+                value: data.kpis.overall_mttr_hours != null ? `${data.kpis.overall_mttr_hours}h` : 'N/D',
+                subtext: data.kpis.overall_mttr_hours != null ? `Moyenne sur tickets clôturés` : 'Aucun ticket résolu',
                 color: '#38bdf8',
                 icon: <Clock size={18} />
               },
               {
                 label: 'Temps Moyen 1ère Réponse',
-                value: `${data.kpis.avg_response_hours ?? 0.4}h`,
-                subtext: `Prise en charge initiale par un agent`,
+                value: data.kpis.avg_response_hours != null ? `${data.kpis.avg_response_hours}h` : 'N/D',
+                subtext: data.kpis.avg_response_hours != null ? `Prise en charge initiale par un agent` : 'Aucune réponse enregistrée',
                 color: '#818cf8',
                 icon: <MessageSquare size={18} />
               },
@@ -510,8 +510,10 @@ const Dashboard: React.FC = () => {
               },
               {
                 label: 'Satisfaction Client (CSAT)',
-                value: `${data.kpis.satisfaction_avg ?? 4.8} / 5`,
-                subtext: `${data.kpis.satisfaction_responses_count ?? 0} retours (${data.kpis.positive_satisfaction_rate_pct ?? (data.csat?.satisfaction_rate_pct ?? 0)}% positifs)`,
+                value: data.kpis.satisfaction_avg != null ? `${data.kpis.satisfaction_avg} / 5` : 'N/D',
+                subtext: (data.kpis.satisfaction_responses_count ?? 0) > 0
+                  ? `${data.kpis.satisfaction_responses_count} retours (${data.kpis.positive_satisfaction_rate_pct ?? (data.csat?.satisfaction_rate_pct ?? 0)}% positifs)`
+                  : 'Aucune évaluation collectée',
                 color: '#fbbf24',
                 icon: <Star size={18} />
               },
@@ -1184,7 +1186,7 @@ const Dashboard: React.FC = () => {
                       }} />
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '10.5px', color: 'rgba(255, 255, 255, 0.35)' }}>
-                      MTTR moyen : {cat.avg_resolution_hours}h
+                      MTTR moyen : {cat.avg_resolution_hours != null ? `${cat.avg_resolution_hours}h` : 'N/D'}
                     </div>
                   </div>
                 ))}
@@ -1247,17 +1249,17 @@ const Dashboard: React.FC = () => {
                       </span>
                       <span style={{
                         fontSize: '10.5px', padding: '2px 7px', borderRadius: '6px',
-                        background: prioItem.is_within_sla ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                        color: prioItem.is_within_sla ? '#34d399' : '#f87171',
+                        background: prioItem.is_within_sla == null ? 'rgba(100, 116, 139, 0.15)' : prioItem.is_within_sla ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: prioItem.is_within_sla == null ? '#94a3b8' : prioItem.is_within_sla ? '#34d399' : '#f87171',
                         fontWeight: 700
                       }}>
-                        {prioItem.is_within_sla ? "✓ Dans le SLA" : "⚠️ Dépassement"}
+                        {prioItem.is_within_sla == null ? "Aucune donnée" : prioItem.is_within_sla ? "✓ Dans le SLA" : "⚠️ Dépassement"}
                       </span>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                       <span style={{ fontSize: '1.6rem', fontWeight: 700, color: '#f8fafc' }}>
-                        {prioItem.avg_resolution_hours}h
+                        {prioItem.avg_resolution_hours != null ? `${prioItem.avg_resolution_hours}h` : 'N/D'}
                       </span>
                       <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.4)' }}>
                         / cible {prioItem.sla_target_hours}h
@@ -1268,8 +1270,8 @@ const Dashboard: React.FC = () => {
                     <div style={{ height: '6px', width: '100%', background: 'rgba(255, 255, 255, 0.06)', borderRadius: '999px', overflow: 'hidden' }}>
                       <div style={{
                         height: '100%',
-                        width: `${Math.min(100, (prioItem.avg_resolution_hours / prioItem.sla_target_hours) * 100)}%`,
-                        background: prioItem.is_within_sla ? '#10b981' : '#ef4444',
+                        width: `${prioItem.avg_resolution_hours != null ? Math.min(100, (prioItem.avg_resolution_hours / prioItem.sla_target_hours) * 100) : 0}%`,
+                        background: prioItem.is_within_sla ? '#10b981' : (prioItem.is_within_sla == null ? '#64748b' : '#ef4444'),
                         borderRadius: '999px'
                       }} />
                     </div>
@@ -1365,7 +1367,9 @@ const Dashboard: React.FC = () => {
                         </td>
                         <td style={{ textAlign: 'center', padding: '12px 14px', fontWeight: 600 }}>{ag.assigned_count}</td>
                         <td style={{ textAlign: 'center', padding: '12px 14px', fontWeight: 700, color: '#34d399' }}>{ag.resolved_count}</td>
-                        <td style={{ textAlign: 'center', padding: '12px 14px', color: 'rgba(255,255,255,0.8)' }}>{ag.avg_resolution_hours}h</td>
+                        <td style={{ textAlign: 'center', padding: '12px 14px', color: 'rgba(255,255,255,0.8)' }}>
+                          {ag.avg_resolution_hours != null ? `${ag.avg_resolution_hours}h` : 'N/D'}
+                        </td>
                         <td style={{ textAlign: 'center', padding: '12px 14px' }}>
                           <span style={{
                             padding: '2px 8px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 700,
@@ -1611,7 +1615,7 @@ const Dashboard: React.FC = () => {
                     </div>
                   );
                 })
-              ) : (
+              ) : data.predictive_insights.strategic_issues && data.predictive_insights.strategic_issues.length > 0 ? (
                 /* Fallback to strategic_issues if recurring_clusters is not provided */
                 data.predictive_insights.strategic_issues.map((issue) => (
                   <div
@@ -1700,6 +1704,23 @@ const Dashboard: React.FC = () => {
                     </div>
                   </div>
                 ))
+              ) : (
+                <div style={{
+                  gridColumn: '1 / -1',
+                  padding: '36px 20px',
+                  textAlign: 'center',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  borderRadius: '16px',
+                  border: '1px dashed rgba(255, 255, 255, 0.1)',
+                  color: 'rgba(255, 255, 255, 0.45)',
+                  fontSize: '13px'
+                }}>
+                  <CheckCircle2 size={32} style={{ color: '#10b981', margin: '0 auto 10px', opacity: 0.8 }} />
+                  <div style={{ fontWeight: 600, color: '#f8fafc', marginBottom: '4px' }}>
+                    Aucun incident récurrent détecté
+                  </div>
+                  <span>Aucun groupe de récurrence ni anomalie systémique identifiés sur la période sélectionnée.</span>
+                </div>
               )}
             </div>
           </div>

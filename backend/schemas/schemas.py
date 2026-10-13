@@ -95,7 +95,7 @@ class UserOut(BaseModel):
     Both `id` and `_id` are populated by MongoModel.format_id before serialization.
     """
     id: str
-    email: EmailStr
+    email: str
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
     department: Optional[str] = None
@@ -329,6 +329,11 @@ class TicketUpdate(BaseModel):
     routing_reason: Optional[str] = None
     keywords: Optional[List[str]] = None
     resolution_note: Optional[str] = None
+
+    class Config:
+        # Reject fields that are not part of the public update contract instead
+        # of silently accepting them from a caller.
+        extra = "forbid"
 
 
 class StatusUpdateRequest(BaseModel):
@@ -565,8 +570,8 @@ class SLARiskKPISummary(BaseModel):
     at_risk_count: int
     breached_count: int
     paused_count: int
-    compliance_pct: float
-    avg_remaining_minutes: float
+    compliance_pct: Optional[float] = None
+    avg_remaining_minutes: Optional[float] = None
 
 
 class SLARiskOverviewOut(BaseModel):
@@ -723,7 +728,7 @@ class CategoryBreakdown(BaseModel):
     category: str
     count: int
     percentage: float
-    avg_resolution_hours: float
+    avg_resolution_hours: Optional[float] = None
 
 
 class AgentPerformanceOut(BaseModel):
@@ -735,8 +740,8 @@ class AgentPerformanceOut(BaseModel):
     workload: int
     assigned_count: int
     resolved_count: int
-    avg_resolution_hours: float
-    sla_compliance_pct: float
+    avg_resolution_hours: Optional[float] = None
+    sla_compliance_pct: Optional[float] = None
     efficiency_rating: str  # "Excellent", "Bon", "En progression"
     avg_csat_score: Optional[float] = None
     csat_responses_count: int = 0
@@ -744,16 +749,16 @@ class AgentPerformanceOut(BaseModel):
 
 class MTTRByPriority(BaseModel):
     priority: TicketPriority
-    avg_resolution_hours: float
+    avg_resolution_hours: Optional[float] = None
     sla_target_hours: float
-    is_within_sla: bool
+    is_within_sla: Optional[bool] = None
 
 
 class MTTRMetricsOut(BaseModel):
-    overall_avg_hours: float
+    overall_avg_hours: Optional[float] = None
     by_priority: List[MTTRByPriority] = []
     by_category: List[CategoryBreakdown] = []
-    sla_compliance_overall_pct: float
+    sla_compliance_overall_pct: Optional[float] = None
 
 
 class StrategicRecurrentIssue(BaseModel):
@@ -762,7 +767,7 @@ class StrategicRecurrentIssue(BaseModel):
     category: str
     recurrence_count: int
     impact_level: str  # "CRITIQUE", "ÉLEVÉ", "MOYEN"
-    estimated_hours_lost: float
+    estimated_hours_lost: Optional[float] = None
     root_cause_analysis: str
     ai_strategic_recommendation: str
     preventive_action_plan: List[str] = []
@@ -781,10 +786,10 @@ class DailyForecastPoint(BaseModel):
 class VolumeForecastOut(BaseModel):
     forecast_days: int = 7
     daily_forecasts: List[DailyForecastPoint] = []
-    total_predicted_volume: int = 0
-    historical_daily_avg: float = 0.0
-    growth_trend_pct: float = 0.0
-    spike_risk: str = "FAIBLE"  # "ÉLEVÉ", "MODÉRÉ", "FAIBLE"
+    total_predicted_volume: Optional[int] = None
+    historical_daily_avg: Optional[float] = None
+    growth_trend_pct: Optional[float] = None
+    spike_risk: Optional[str] = None  # "ÉLEVÉ", "MODÉRÉ", "FAIBLE"
     confidence_level: str = "MEDIUM"  # "HIGH", "MEDIUM", "LOW"
     is_baseline: bool = False
     peak_days: List[str] = []
@@ -870,7 +875,7 @@ class RecurringClusterOut(BaseModel):
     occurrence_count: int
     status: str = "ACTIVE"  # "ACTIVE" ou "RESOLVED"
     impact_level: str = "MOYEN"  # "CRITIQUE", "ÉLEVÉ", "MOYEN"
-    estimated_hours_lost: float = 0.0
+    estimated_hours_lost: Optional[float] = None
     first_seen: datetime
     last_seen: datetime
     average_similarity_pct: float
@@ -890,9 +895,9 @@ class RecurringIssuesResponse(BaseModel):
 
 class AIPredictiveInsights(BaseModel):
     forecast_summary: str
-    predicted_volume_next_week: int
-    volume_growth_trend_pct: float
-    predicted_spike_risk: str  # "ÉLEVÉ", "MODÉRÉ", "FAIBLE"
+    predicted_volume_next_week: Optional[int] = None
+    volume_growth_trend_pct: Optional[float] = None
+    predicted_spike_risk: Optional[str] = None  # "ÉLEVÉ", "MODÉRÉ", "FAIBLE"
     peak_time_windows: List[str] = []
     strategic_issues: List[StrategicRecurrentIssue] = []
     recommended_focus_areas: List[str] = []
@@ -905,7 +910,7 @@ class AIPredictiveInsights(BaseModel):
 class CSATTrendPoint(BaseModel):
     date: str
     label: str
-    avg_rating: float
+    avg_rating: Optional[float] = None
     count: int
 
 
@@ -933,8 +938,8 @@ class CSATRecentFeedback(BaseModel):
 
 class CSATAnalyticsOut(BaseModel):
     total_ratings: int = 0
-    avg_rating: float = 0.0
-    satisfaction_rate_pct: float = 0.0  # % of ratings >= 4
+    avg_rating: Optional[float] = None
+    satisfaction_rate_pct: Optional[float] = None  # % of ratings >= 4
     distribution: Dict[str, int] = Field(default_factory=lambda: {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0})
     trend: List[CSATTrendPoint] = []
     by_agent: List[CSATAgentStat] = []
@@ -948,14 +953,14 @@ class SummaryKPIs(BaseModel):
     open_tickets: int
     in_progress_tickets: int
     resolved_tickets: int
-    resolution_rate_pct: float
-    overall_mttr_hours: float
-    overall_sla_compliance_pct: float
-    critical_recurring_count: int
-    avg_response_hours: float = 0.5
-    satisfaction_avg: float = 4.8
+    resolution_rate_pct: Optional[float] = None
+    overall_mttr_hours: Optional[float] = None
+    overall_sla_compliance_pct: Optional[float] = None
+    critical_recurring_count: int = 0
+    avg_response_hours: Optional[float] = None
+    satisfaction_avg: Optional[float] = None
     satisfaction_responses_count: int = 0
-    positive_satisfaction_rate_pct: float = 0.0
+    positive_satisfaction_rate_pct: Optional[float] = None
 
 
 class AnalyticsDashboardOut(BaseModel):

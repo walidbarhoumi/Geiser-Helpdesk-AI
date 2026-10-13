@@ -1,5 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.geiser.support.geiser_mobile">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Permissions requises pour communiquer avec l'API FastAPI et téléverser des pièces jointes -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -11,8 +10,9 @@
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
         <activity
-            android:name=".MainActivity"
+            android:name="com.geiser.support.geiser_mobile.MainActivity"
             android:exported="true"
+            android:enabled="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"

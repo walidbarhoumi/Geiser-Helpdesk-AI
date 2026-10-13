@@ -253,14 +253,14 @@ class TestCSATSubmissionEndpoint:
 
 class TestCSATAnalyticsCalculations:
     def test_compute_csat_empty_tickets(self):
-        """Empty ticket list should produce zeroed metrics gracefully."""
+        """Empty ticket list reports unknown averages as unavailable."""
         db = MagicMock()
         svc = AnalyticsService(db)
         csat = svc._compute_csat_analytics([])
 
         assert csat.total_ratings == 0
-        assert csat.avg_rating == 0.0
-        assert csat.satisfaction_rate_pct == 0.0
+        assert csat.avg_rating is None
+        assert csat.satisfaction_rate_pct is None
         assert csat.distribution == {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}
         assert csat.by_agent == []
         assert csat.by_category == []
@@ -380,10 +380,12 @@ class TestCSATAnalyticsEndpoints:
         db = MagicMock()
         cursor = MagicMock()
         cursor.to_list = AsyncMock(return_value=[
-            {"satisfaction_rating": 5, "created_at": datetime.utcnow(), "category": "Réseau"},
-            {"satisfaction_rating": 4, "created_at": datetime.utcnow(), "category": "Réseau"}
+            {"satisfaction_rating": 5, "created_at": datetime.utcnow(), "category": "Réseau", "assigned_agent_id": "ag1"},
+            {"satisfaction_rating": 4, "created_at": datetime.utcnow(), "category": "Réseau", "assigned_agent_id": "ag1"}
         ])
         db.tickets.find = MagicMock(return_value=cursor)
+        db.agents.find_one = AsyncMock(return_value={"_id": "ag1", "user_id": "u1"})
+        db.teams.find = MagicMock(return_value=cursor)
 
         user = {"id": "u1", "role": UserRole.AGENT.value, "email": "a@g.com"}
         client = make_test_client(db, user)

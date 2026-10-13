@@ -80,13 +80,25 @@ class ReportExportService:
             ws1[col].font = header_font
             ws1[col].alignment = Alignment(horizontal="center", vertical="center")
             
+        overall_mttr = kpis.get("overall_mttr_hours")
+        overall_mttr_str = f"{overall_mttr} heures" if overall_mttr is not None else "N/D"
+        overall_mttr_status = ("Optimal" if overall_mttr <= 4.0 else "À optimiser") if overall_mttr is not None else "Non déterminé"
+
+        avg_resp = kpis.get("avg_response_hours")
+        avg_resp_str = f"{avg_resp} heures" if avg_resp is not None else "N/D"
+
+        sat_avg = kpis.get("satisfaction_avg")
+        sat_avg_str = f"{sat_avg} / 5.0" if sat_avg is not None else "N/D"
+
+        resolution_pct = kpis.get("resolution_rate_pct")
+        sla_pct = kpis.get("overall_sla_compliance_pct")
         kpi_rows = [
             ("Volume Total de Tickets", kpis.get("total_tickets", 0), "-", "Activité"),
-            ("Taux de Résolution Global", f"{kpis.get('resolution_rate_pct', 0)}%", "≥ 85.0%", "Conforme" if kpis.get("resolution_rate_pct", 0) >= 85 else "Sous surveillance"),
-            ("Respect Global des SLA", f"{kpis.get('overall_sla_compliance_pct', 0)}%", "≥ 90.0%", "Conforme" if kpis.get("overall_sla_compliance_pct", 0) >= 90 else "Alerte SLA"),
-            ("Temps Moyen de Résolution (MTTR)", f"{kpis.get('overall_mttr_hours', 0)} heures", "≤ 4.0 h", "Optimal" if kpis.get("overall_mttr_hours", 0) <= 4.0 else "À optimiser"),
-            ("Temps Moyen de 1ère Réponse", f"{kpis.get('avg_response_hours', 0.4)} heures", "≤ 1.0 h", "Excellent"),
-            ("Satisfaction Client (CSAT)", f"{kpis.get('satisfaction_avg', 4.8)} / 5.0", "≥ 4.5 / 5", "Haute Satisfaction"),
+            ("Taux de Résolution Global", f"{resolution_pct}%" if resolution_pct is not None else "N/D", "≥ 85.0%", ("Conforme" if resolution_pct >= 85 else "Sous surveillance") if resolution_pct is not None else "Données insuffisantes"),
+            ("Respect Global des SLA", f"{sla_pct}%" if sla_pct is not None else "N/D", "≥ 90.0%", ("Conforme" if sla_pct >= 90 else "Alerte SLA") if sla_pct is not None else "Données insuffisantes"),
+            ("Temps Moyen de Résolution (MTTR)", overall_mttr_str, "≤ 4.0 h", overall_mttr_status),
+            ("Temps Moyen de 1ère Réponse", avg_resp_str, "≤ 1.0 h", "Excellent" if avg_resp is not None else "Non déterminé"),
+            ("Satisfaction Client (CSAT)", sat_avg_str, "≥ 4.5 / 5", "Haute Satisfaction" if sat_avg is not None and sat_avg >= 4.5 else ("À améliorer" if sat_avg is not None else "Aucun retour")),
             ("Évaluations CSAT enregistrées", kpis.get("satisfaction_responses_count", 0), "-", "Retours usagers"),
             ("Problèmes Systémiques / Clusters IA", kpis.get("critical_recurring_count", 0), "0", "Priorité N3" if kpis.get("critical_recurring_count", 0) > 0 else "Aucun cluster"),
         ]
@@ -143,20 +155,22 @@ class ReportExportService:
             c_res.alignment = Alignment(horizontal="center")
             c_res.font = Font(name="Calibri", size=11, bold=True, color="059669")
             
-            c_mttr = ws2.cell(row=r_idx, column=6, value=ag.get("avg_resolution_hours", 0.0))
+            agent_mttr = ag.get("avg_resolution_hours")
+            c_mttr = ws2.cell(row=r_idx, column=6, value=agent_mttr if agent_mttr is not None else "N/D")
             c_mttr.alignment = Alignment(horizontal="center")
             
-            c_sla = ws2.cell(row=r_idx, column=7, value=f"{ag.get('sla_compliance_pct', 100.0)}%")
+            agent_sla = ag.get("sla_compliance_pct")
+            c_sla = ws2.cell(row=r_idx, column=7, value=f"{agent_sla}%" if agent_sla is not None else "N/D")
             c_sla.alignment = Alignment(horizontal="center")
-            if ag.get("sla_compliance_pct", 100.0) >= 90:
+            if agent_sla is not None and agent_sla >= 90:
                 c_sla.fill = sla_ok_fill
-            else:
+            elif agent_sla is not None:
                 c_sla.fill = sla_ko_fill
                 
             c_work = ws2.cell(row=r_idx, column=8, value=ag.get("workload", 0))
             c_work.alignment = Alignment(horizontal="center")
             
-            c_rat = ws2.cell(row=r_idx, column=9, value=ag.get("efficiency_rating", "Bon"))
+            c_rat = ws2.cell(row=r_idx, column=9, value=ag.get("efficiency_rating", "N/D"))
             c_rat.alignment = Alignment(horizontal="center")
             c_rat.font = bold_font
 
@@ -358,6 +372,15 @@ class ReportExportService:
 
         # ── 1. KPI Cards Table ──
         kpis = data.get("kpis", {})
+        overall_mttr = kpis.get("overall_mttr_hours")
+        overall_mttr_str = f"{overall_mttr}h" if overall_mttr is not None else "N/D"
+
+        avg_resp = kpis.get("avg_response_hours")
+        avg_resp_str = f"{avg_resp}h" if avg_resp is not None else "N/D"
+
+        sat_avg = kpis.get("satisfaction_avg")
+        sat_avg_str = f"{sat_avg}/5" if sat_avg is not None else "N/D"
+
         kpi_table_data = [
             [
                 Paragraph("<b>VOLUME TOTAL</b>", cell_center),
@@ -369,11 +392,11 @@ class ReportExportService:
             ],
             [
                 Paragraph(f"<font size='14'><b>{kpis.get('total_tickets', 0)}</b></font>", cell_center),
-                Paragraph(f"<font size='14' color='#059669'><b>{kpis.get('resolution_rate_pct', 0)}%</b></font>", cell_center),
-                Paragraph(f"<font size='14' color='#4F46E5'><b>{kpis.get('overall_sla_compliance_pct', 0)}%</b></font>", cell_center),
-                Paragraph(f"<font size='14'><b>{kpis.get('overall_mttr_hours', 0)}h</b></font>", cell_center),
-                Paragraph(f"<font size='14'><b>{kpis.get('avg_response_hours', 0.4)}h</b></font>", cell_center),
-                Paragraph(f"<font size='14' color='#D97706'><b>{kpis.get('satisfaction_avg', 4.8)}/5</b></font>", cell_center),
+                Paragraph(f"<font size='14' color='#059669'><b>{kpis.get('resolution_rate_pct')}%</b></font>" if kpis.get('resolution_rate_pct') is not None else "N/D", cell_center),
+                Paragraph(f"<font size='14' color='#4F46E5'><b>{kpis.get('overall_sla_compliance_pct')}%</b></font>" if kpis.get('overall_sla_compliance_pct') is not None else "N/D", cell_center),
+                Paragraph(f"<font size='14'><b>{overall_mttr_str}</b></font>", cell_center),
+                Paragraph(f"<font size='14'><b>{avg_resp_str}</b></font>", cell_center),
+                Paragraph(f"<font size='14' color='#D97706'><b>{sat_avg_str}</b></font>", cell_center),
             ]
         ]
         t_kpi = Table(kpi_table_data, colWidths=[88, 88, 88, 88, 88, 88])
@@ -401,14 +424,20 @@ class ReportExportService:
         ]
         for item in mttr_matrix:
             prio = str(item.get("priority", "MEDIUM"))
-            actual = item.get("avg_resolution_hours", 0.0)
-            target = item.get("sla_target_hours", 24.0)
-            is_ok = item.get("is_within_sla", True)
+            actual = item.get("avg_resolution_hours")
+            actual_str = f"{actual} h" if actual is not None else "N/D"
+            target = item.get("sla_target_hours") or item.get("target_sla_hours", 24.0)
+            is_ok = item.get("is_within_sla")
             
-            status_html = "<font color='#059669'><b>✓ Respecté</b></font>" if is_ok else "<font color='#DC2626'><b>⚠️ Dépassement</b></font>"
+            if is_ok is None:
+                status_html = "<font color='#64748B'><b>N/D</b></font>"
+            elif is_ok:
+                status_html = "<font color='#059669'><b>✓ Respecté</b></font>"
+            else:
+                status_html = "<font color='#DC2626'><b>⚠️ Dépassement</b></font>"
             sla_rows.append([
                 Paragraph(prio, cell_bold),
-                Paragraph(f"{actual} h", cell_center),
+                Paragraph(actual_str, cell_center),
                 Paragraph(f"{target} h", cell_center),
                 Paragraph(status_html, cell_center),
             ])
@@ -440,15 +469,17 @@ class ReportExportService:
             ]
         ]
         for ag in agents[:10]: # Top 10
-            sla_val = ag.get("sla_compliance_pct", 100.0)
-            sla_str = f"<font color='#059669'><b>{sla_val}%</b></font>" if sla_val >= 90 else f"<font color='#D97706'><b>{sla_val}%</b></font>"
+            sla_val = ag.get("sla_compliance_pct")
+            sla_str = (f"<font color='#059669'><b>{sla_val}%</b></font>" if sla_val >= 90 else f"<font color='#D97706'><b>{sla_val}%</b></font>") if sla_val is not None else "N/D"
+            ag_mttr = ag.get("avg_resolution_hours")
+            ag_mttr_str = f"{ag_mttr}h" if ag_mttr is not None else "N/D"
             agent_rows.append([
-                Paragraph(f"<b>{ag.get('agent_name', 'Agent')}</b><br/><font size='7' color='#64748B'>{ag.get('email', '')}</font>", cell_style),
-                Paragraph(str(ag.get("assigned_count", 0)), cell_center),
-                Paragraph(str(ag.get("resolved_count", 0)), cell_center),
-                Paragraph(f"{ag.get('avg_resolution_hours', 0.0)}h", cell_center),
+                Paragraph(f"<b>{ag.get('agent_name', ag.get('name', 'Agent'))}</b><br/><font size='7' color='#64748B'>{ag.get('email', '')}</font>", cell_style),
+                Paragraph(str(ag.get("assigned_count", ag.get("active_tickets", 0))), cell_center),
+                Paragraph(str(ag.get("resolved_count", ag.get("resolved_tickets", 0))), cell_center),
+                Paragraph(ag_mttr_str, cell_center),
                 Paragraph(sla_str, cell_center),
-                Paragraph(f"<b>{ag.get('efficiency_rating', 'Bon')}</b>", cell_center),
+                Paragraph(f"<b>{ag.get('efficiency_rating', 'N/D')}</b>", cell_center),
             ])
             
         t_agent = Table(agent_rows, colWidths=[168, 70, 70, 70, 70, 80])
@@ -465,10 +496,12 @@ class ReportExportService:
 
         # ── 4. Satisfaction Client (CSAT) ──
         story.append(Paragraph("3. Synthèse Satisfaction Client (CSAT)", section_style))
+        sat_text_val = f"<b>{sat_avg} / 5.0</b>" if sat_avg is not None else "<b>Non évalué (N/D)</b>"
+        resp_text_val = f"<b>{avg_resp} heure(s)</b>" if avg_resp is not None else "<b>Non déterminé (N/D)</b>"
         csat_text = f"""
-        La note moyenne de satisfaction attribuée par les utilisateurs s'élève à <b>{kpis.get('satisfaction_avg', 4.8)} / 5.0</b> 
+        La note moyenne de satisfaction attribuée par les utilisateurs s'élève à {sat_text_val} 
         sur un total de <b>{kpis.get('satisfaction_responses_count', 0)} évaluations collectées</b>. 
-        Le support assure un temps moyen de prise en charge de <b>{kpis.get('avg_response_hours', 0.4)} heure(s)</b>, 
+        Le support assure un temps moyen de prise en charge de {resp_text_val}, 
         maintenant un haut niveau d'engagement de service et de réassurance pour les collaborateurs de l'entreprise.
         """
         story.append(Paragraph(csat_text, cell_style))

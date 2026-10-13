@@ -21,10 +21,13 @@ class ApiClient {
       ),
     );
 
-    // Intercepteur pour injecter automatiquement le Token JWT Bearer
+    // Dynamic base URL updater and JWT interceptor
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          // Always ensure the latest base URL is used dynamically
+          options.baseUrl = ApiConstants.baseUrl;
+
           final prefs = await SharedPreferences.getInstance();
           final token = prefs.getString(ApiConstants.tokenKey);
           if (token != null && token.isNotEmpty) {
@@ -37,5 +40,10 @@ class ApiClient {
         },
       ),
     );
+  }
+
+  /// Update Dio baseUrl directly if needed
+  void updateBaseUrl(String newBaseUrl) {
+    dio.options.baseUrl = newBaseUrl;
   }
 }

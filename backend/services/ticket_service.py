@@ -14,6 +14,30 @@ logger = logging.getLogger(__name__)
 
 
 class TicketService:
+    ALLOWED_STATUS_TRANSITIONS = {
+        TicketStatus.OPEN.value: {
+            TicketStatus.IN_PROGRESS.value,
+            TicketStatus.PENDING.value,
+            TicketStatus.RESOLVED.value,
+        },
+        TicketStatus.IN_PROGRESS.value: {
+            TicketStatus.OPEN.value,
+            TicketStatus.PENDING.value,
+            TicketStatus.RESOLVED.value,
+        },
+        TicketStatus.PENDING.value: {
+            TicketStatus.OPEN.value,
+            TicketStatus.IN_PROGRESS.value,
+            TicketStatus.RESOLVED.value,
+        },
+        TicketStatus.RESOLVED.value: {
+            TicketStatus.OPEN.value,
+            TicketStatus.IN_PROGRESS.value,
+            TicketStatus.CLOSED.value,
+        },
+        TicketStatus.CLOSED.value: set(),
+    }
+
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
         self.tickets = db.tickets
@@ -333,8 +357,18 @@ class TicketService:
             return None
 
         ticket = await self.tickets.find_one({"_id": oid})
-        old_status = ticket.get("status") if ticket else "OPEN"
+        if not ticket:
+            return None
+
+        old_status = ticket.get("status", TicketStatus.OPEN.value)
+        if hasattr(old_status, "value"):
+            old_status = old_status.value
         new_status_val = new_status.value if hasattr(new_status, "value") else str(new_status)
+        if (
+            new_status_val != old_status
+            and new_status_val not in self.ALLOWED_STATUS_TRANSITIONS.get(old_status, set())
+        ):
+            raise ValueError(f"Invalid ticket status transition: {old_status} -> {new_status_val}")
         update_fields: dict = {"status": new_status_val, "updated_at": datetime.utcnow()}
 
         now = datetime.utcnow()

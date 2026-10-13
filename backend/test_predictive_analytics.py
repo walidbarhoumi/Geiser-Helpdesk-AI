@@ -69,19 +69,19 @@ def predictive_service(mock_db):
 
 @pytest.mark.asyncio
 async def test_volume_forecast_empty_tickets(predictive_service):
-    """Zero tickets returns baseline fallback with is_baseline=True and confidence=LOW."""
+    """Zero tickets return an explicit unavailable forecast, never fabricated volume."""
     forecast = await predictive_service.generate_volume_forecast(tickets=[], forecast_days=7)
     assert forecast.is_baseline is True
-    assert forecast.confidence_level == "LOW"
+    assert forecast.confidence_level == "UNAVAILABLE"
     assert forecast.forecast_days == 7
-    assert len(forecast.daily_forecasts) == 7
-    assert forecast.total_predicted_volume > 0
+    assert forecast.daily_forecasts == []
+    assert forecast.total_predicted_volume is None
     assert forecast.data_points_analyzed == 0
 
 
 @pytest.mark.asyncio
 async def test_volume_forecast_insufficient_data(predictive_service):
-    """Only 2 tickets on 1 day: should return baseline fallback safely."""
+    """One-day history is insufficient for a forecast."""
     now = datetime.utcnow()
     tickets = [
         {"_id": ObjectId(), "created_at": now},
@@ -89,9 +89,10 @@ async def test_volume_forecast_insufficient_data(predictive_service):
     ]
     forecast = await predictive_service.generate_volume_forecast(tickets=tickets, forecast_days=7)
     assert forecast.is_baseline is True
-    assert forecast.confidence_level == "LOW"
+    assert forecast.confidence_level == "UNAVAILABLE"
     assert forecast.data_points_analyzed == 2
-    assert len(forecast.daily_forecasts) == 7
+    assert forecast.daily_forecasts == []
+    assert forecast.total_predicted_volume is None
 
 
 @pytest.mark.asyncio
@@ -357,10 +358,13 @@ async def test_analytics_dashboard_predictive_insights_integration(mock_db):
     mock_db.agents.find = MagicMock(return_value=cursor_mock)
 
     service = AnalyticsService(mock_db)
-    dash = await service.get_dashboard_analytics(period_days=14)
+    dash = await service.get_dashboard_analytics(
+        period_days=14,
+        current_user={"id": "650000000000000000000099", "role": UserRole.ADMIN.value},
+    )
 
     assert dash.predictive_insights is not None
-    assert dash.predictive_insights.predicted_volume_next_week > 0
+    assert dash.predictive_insights.predicted_volume_next_week is None
     assert dash.predictive_insights.volume_forecast is not None
     assert dash.predictive_insights.volume_forecast.forecast_days == 7
 

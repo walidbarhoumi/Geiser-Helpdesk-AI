@@ -317,7 +317,7 @@ export type CategoryBreakdown = {
   category: string;
   count: number;
   percentage: number;
-  avg_resolution_hours: number;
+  avg_resolution_hours?: number | null;
 };
 
 export type AgentPerformance = {
@@ -329,7 +329,7 @@ export type AgentPerformance = {
   workload: number;
   assigned_count: number;
   resolved_count: number;
-  avg_resolution_hours: number;
+  avg_resolution_hours?: number | null;
   sla_compliance_pct: number;
   efficiency_rating: string;
   avg_csat_score?: number | null;
@@ -338,13 +338,13 @@ export type AgentPerformance = {
 
 export type MTTRByPriority = {
   priority: TicketPriority;
-  avg_resolution_hours: number;
+  avg_resolution_hours?: number | null;
   sla_target_hours: number;
-  is_within_sla: boolean;
+  is_within_sla?: boolean | null;
 };
 
 export type MTTRMetrics = {
-  overall_avg_hours: number;
+  overall_avg_hours?: number | null;
   by_priority: MTTRByPriority[];
   by_category: CategoryBreakdown[];
   sla_compliance_overall_pct: number;
@@ -490,11 +490,11 @@ export type SummaryKPIs = {
   in_progress_tickets: number;
   resolved_tickets: number;
   resolution_rate_pct: number;
-  overall_mttr_hours: number;
+  overall_mttr_hours?: number | null;
   overall_sla_compliance_pct: number;
   critical_recurring_count: number;
-  avg_response_hours?: number;
-  satisfaction_avg?: number;
+  avg_response_hours?: number | null;
+  satisfaction_avg?: number | null;
   satisfaction_responses_count?: number;
   positive_satisfaction_rate_pct?: number;
 };

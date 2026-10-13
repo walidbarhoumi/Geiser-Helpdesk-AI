@@ -597,7 +597,7 @@ class SLARiskService:
         })
         on_track_count = max(0, total_active - (breached_count + at_risk_count + paused_count))
 
-        compliance_pct = round(((total_active - breached_count) / total_active * 100.0), 1) if total_active > 0 else 100.0
+        compliance_pct = round(((total_active - breached_count) / total_active * 100.0), 1) if total_active > 0 else None
 
         # Query tickets currently at risk or breached
         at_risk_cursor = self.tickets.find({
@@ -630,7 +630,7 @@ class SLARiskService:
                 "created_at": t.get("created_at")
             })
 
-        avg_remaining_min = round(total_remaining_sec / remaining_count / 60, 1) if remaining_count > 0 else 0.0
+        avg_remaining_min = round(total_remaining_sec / remaining_count / 60, 1) if remaining_count > 0 else None
 
         # Recent alerts
         alerts_cursor = self.sla_alerts.find().sort("created_at", -1).limit(25)
