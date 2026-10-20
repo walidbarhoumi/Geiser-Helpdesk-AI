@@ -20,6 +20,7 @@ langchain-text-splitters
 pypdf
 reportlab
 xlsxwriter
+openpyxl
 twilio
 ldap3
 python-docx
