@@ -1,0 +1,153 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# GEISER Helpdesk AI — GitLab CI/CD Pipeline Configuration
+# Project: https://gitlab.com/geiser-group1/Geiser-Helpdesk-AI
+# ══════════════════════════════════════════════════════════════════════════════
+
+stages:
+  - lint
+  - test
+  - build
+  - docker
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  NODE_CACHE_DIR: "$CI_PROJECT_DIR/.cache/npm"
+  PYTHONUNBUFFERED: "1"
+
+# Global caching to speed up subsequent pipeline runs
+cache:
+  key: "$CI_COMMIT_REF_SLUG"
+  paths:
+    - .cache/pip
+    - frontend/node_modules/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 1: LINT & STATIC CODE ANALYSIS
+# ─────────────────────────────────────────────────────────────────────────────
+
+lint:backend:
+  stage: lint
+  image: python:3.10-slim
+  before_script:
+    - pip install --upgrade pip
+    - pip install flake8
+  script:
+    - echo "🔍 Verifying Python syntax and critical errors across backend..."
+    # stop the build if there are Python syntax errors or undefined names
+    - flake8 backend --count --select=E9,F63,F7,F82 --show-source --statistics
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+lint:frontend:
+  stage: lint
+  image: node:20-alpine
+  before_script:
+    - cd frontend
+    - npm ci --prefer-offline --no-audit
+  script:
+    - echo "🔍 Checking frontend TypeScript compilation..."
+    - npx tsc --noEmit
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 2: AUTOMATED TESTING
+# ─────────────────────────────────────────────────────────────────────────────
+
+test:backend-unit:
+  stage: test
+  image: python:3.10-slim
+  services:
+    - name: mongo:6.0
+      alias: mongo
+  variables:
+    MONGO_URL: "mongodb://mongo:27017/itsm_test"
+    SECRET_KEY: "geiser-ci-cd-test-super-secret-key-32chars!"
+    ALGORITHM: "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+    ENVIRONMENT: "test"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends gcc g++ libldap2-dev libsasl2-dev
+    - pip install --upgrade pip
+    - pip install -r backend/requirements.txt
+  script:
+    - echo "🧪 Running ITIL Matrix, SLA, JWT, CSAT and Security test suites..."
+    - cd backend
+    - pytest test_itil_priority.py -v --tb=short
+    - pytest test_jwt_blacklist.py -v --tb=short
+    - pytest test_sla_service.py -v --tb=short
+    - pytest test_csat_feature.py -v --tb=short
+    - pytest test_attachments_security.py -v --tb=short
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: backend/junit.xml
+    expire_in: 7 days
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 3: APPLICATION BUILD
+# ─────────────────────────────────────────────────────────────────────────────
+
+build:frontend:
+  stage: build
+  image: node:20-alpine
+  before_script:
+    - cd frontend
+    - npm ci --prefer-offline --no-audit
+  script:
+    - echo "📦 Building React Production Bundle (Vite)..."
+    - npm run build
+  artifacts:
+    name: "geiser-frontend-dist-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - frontend/dist/
+    expire_in: 14 days
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 4: DOCKER CONTAINER IMAGES (CI Registry)
+# ─────────────────────────────────────────────────────────────────────────────
+
+docker:build-backend:
+  stage: docker
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - echo "🐳 Building Backend Docker Image..."
+    - docker build -t "$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHORT_SHA" -t "$CI_REGISTRY_IMAGE/backend:latest" ./backend
+    - docker push "$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHORT_SHA"
+    - docker push "$CI_REGISTRY_IMAGE/backend:latest"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual # set to manual so it doesn't consume minutes automatically unless clicked
+
+docker:build-frontend:
+  stage: docker
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - echo "🐳 Building Frontend Docker Image..."
+    - docker build -t "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHORT_SHA" -t "$CI_REGISTRY_IMAGE/frontend:latest" ./frontend
+    - docker push "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHORT_SHA"
+    - docker push "$CI_REGISTRY_IMAGE/frontend:latest"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
