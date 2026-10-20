@@ -11,8 +11,9 @@ stages:
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PYTHONUNBUFFERED: "1"
+  PYTHONPATH: "$CI_PROJECT_DIR/backend"
 
-# Caching to accelerate subsequent builds
+# Global caching to accelerate subsequent runs
 cache:
   key: "$CI_COMMIT_REF_SLUG"
   paths:
@@ -20,7 +21,7 @@ cache:
     - frontend/node_modules/
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STAGE 1: LINT & STATIC CHECKS
+# STAGE 1: LINT & STATIC CODE VALIDATION
 # ─────────────────────────────────────────────────────────────────────────────
 
 lint:backend:
@@ -47,24 +48,27 @@ lint:frontend:
 test:backend-unit:
   stage: test
   image: python:3.10-slim
+  needs: ["lint:backend"]
   variables:
     MONGO_URL: "mongodb://localhost:27017/itsm_test"
     SECRET_KEY: "geiser-ci-cd-test-super-secret-key-32chars!"
     ALGORITHM: "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: "60"
     ENVIRONMENT: "test"
+    PYTHONPATH: "$CI_PROJECT_DIR/backend"
   before_script:
     - pip install --upgrade pip
-    # Install CPU-only wheels for torch/sentence-transformers to prevent huge GPU wheel downloads
-    - pip install --no-cache-dir -r backend/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+    # Pre-install lightweight CPU-only PyTorch so pip doesn't pull 2.5GB CUDA packages
+    - pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+    - pip install --no-cache-dir -r backend/requirements.txt
   script:
     - echo "🧪 Running ITIL Matrix, SLA, JWT, CSAT and Security test suites..."
     - cd backend
-    - pytest test_itil_priority.py -v --tb=short
-    - pytest test_jwt_blacklist.py -v --tb=short
-    - pytest test_sla_service.py -v --tb=short
-    - pytest test_csat_feature.py -v --tb=short
-    - pytest test_attachments_security.py -v --tb=short
+    - python -m pytest test_itil_priority.py -v --tb=short
+    - python -m pytest test_jwt_blacklist.py -v --tb=short
+    - python -m pytest test_sla_service.py -v --tb=short
+    - python -m pytest test_csat_feature.py -v --tb=short
+    - python -m pytest test_attachments_security.py -v --tb=short
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 3: APPLICATION BUILD
@@ -73,6 +77,7 @@ test:backend-unit:
 build:frontend:
   stage: build
   image: node:20-alpine
+  needs: ["lint:frontend"]  # Runs as soon as lint:frontend passes, doesn't wait for backend tests!
   before_script:
     - cd frontend
     - npm ci --prefer-offline --no-audit
