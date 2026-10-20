@@ -24,3 +24,4 @@ openpyxl
 twilio
 ldap3
 python-docx
+deepeval

@@ -29,14 +29,28 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 
-from deepeval.test_case import LLMTestCase
-from deepeval.metrics import (
-    AnswerRelevancyMetric,
-    FaithfulnessMetric,
-    ContextualPrecisionMetric,
-    ContextualRecallMetric,
-)
-from deepeval.models.base_model import DeepEvalBaseLLM
+try:
+    from deepeval.test_case import LLMTestCase
+    from deepeval.metrics import (
+        AnswerRelevancyMetric,
+        FaithfulnessMetric,
+        ContextualPrecisionMetric,
+        ContextualRecallMetric,
+    )
+    from deepeval.models.base_model import DeepEvalBaseLLM
+    HAS_DEEPEVAL = True
+except ImportError:
+    HAS_DEEPEVAL = False
+    LLMTestCase = None
+    AnswerRelevancyMetric = None
+    FaithfulnessMetric = None
+    ContextualPrecisionMetric = None
+    ContextualRecallMetric = None
+
+    class DeepEvalBaseLLM:
+        def __init__(self, *args, **kwargs):
+            pass
+
 
 from services.ai_evaluation_service import (
     CLASSIFICATION_DATASET,
@@ -392,12 +406,12 @@ class DeepEvalEvaluationService:
                 else "Aucun document pertinent disponible — veuillez créer un ticket de support."
             )
 
-            # DeepEval LLMTestCase instantiation
+            # DeepEval LLMTestCase instantiation (if library present)
             test_case = LLMTestCase(
                 input=q,
                 actual_output=solution,
                 retrieval_context=context_list,
-            )
+            ) if HAS_DEEPEVAL else None
 
             # Semantic grounding measurement
             words_ans = set(solution.lower().split())
